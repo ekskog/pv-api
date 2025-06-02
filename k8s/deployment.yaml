@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: photovault-api
-  namespace: photos
+  namespace: webapps
   labels:
     app: photovault-api
 spec:
@@ -50,7 +50,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: photovault-api-service
-  namespace: photos
+  namespace: webapps
   labels:
     app: photovault-api
 spec:
