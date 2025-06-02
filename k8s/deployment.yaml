@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: photovault-api
+  namespace: photos
+  labels:
+    app: photovault-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: photovault-api
+  template:
+    metadata:
+      labels:
+        app: photovault-api
+    spec:
+      containers:
+      - name: photovault-api
+        image: photovault-api:latest
+        ports:
+        - containerPort: 3001
+          name: http
+        envFrom:
+        - configMapRef:
+            name: photovault-api-config
+        - secretRef:
+            name: photovault-api-secret
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: photovault-api-service
+  namespace: photos
+  labels:
+    app: photovault-api
+spec:
+  selector:
+    app: photovault-api
+  ports:
+  - port: 80
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  type: ClusterIP
