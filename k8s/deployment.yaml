@@ -6,7 +6,7 @@ metadata:
   labels:
     app: photovault-api
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: photovault-api
@@ -26,18 +26,30 @@ spec:
             name: photovault-api-config
         - secretRef:
             name: photovault-api-secret
+        startupProbe:
+          httpGet:
+            path: /
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
         livenessProbe:
           httpGet:
             path: /health
             port: 3001
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 3001
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           requests:
             memory: "128Mi"
