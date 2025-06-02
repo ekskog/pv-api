@@ -1,5 +1,7 @@
 # PhotoVault API
 
+![Build and Deploy](https://github.com/ekskog/photovault-api/workflows/Build%20and%20Deploy%20PhotoVault%20API/badge.svg)
+
 A Node.js Express API for managing photo storage with MinIO backend.
 
 ## Features
