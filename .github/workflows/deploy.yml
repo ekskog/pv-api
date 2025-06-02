@@ -80,8 +80,12 @@ jobs:
         echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
         chmod 600 ~/.kube/config
 
-    - name: Update deployment image
+    - name: Deploy to Kubernetes
       run: |
+        # Apply all Kubernetes manifests
+        kubectl apply -f k8s/
+        
+        # Update the deployment image to the specific commit SHA
         kubectl set image deployment/photovault-api \
           photovault-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
           -n webapps
