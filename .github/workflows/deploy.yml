@@ -84,9 +84,9 @@ jobs:
       run: |
         kubectl set image deployment/photovault-api \
           photovault-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-          -n photos
+          -n webapps
 
     - name: Verify deployment
       run: |
-        kubectl rollout status deployment/photovault-api -n photos
-        kubectl get pods -n photos -l app=photovault-api
+        kubectl rollout status deployment/photovault-api -n webapps
+        kubectl get pods -n webapps -l app=photovault-api
