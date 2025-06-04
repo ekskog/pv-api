@@ -308,51 +308,6 @@ app.delete('/buckets/:bucketName/folders', async (req, res) => {
   }
 })
 
-// DEBUG endpoint - List raw objects without filtering
-app.get('/debug/buckets/:bucketName/raw', async (req, res) => {
-  try {
-    const { bucketName } = req.params
-    const { prefix = '' } = req.query
-
-    // Check if bucket exists
-    const bucketExists = await minioClient.bucketExists(bucketName)
-    if (!bucketExists) {
-      return res.status(404).json({
-        success: false,
-        error: 'Bucket not found'
-      })
-    }
-
-    const allObjects = []
-
-    // Get ALL objects recursively
-    const stream = minioClient.listObjectsV2(bucketName, prefix, true)
-    
-    for await (const obj of stream) {
-      allObjects.push({
-        name: obj.name,
-        size: obj.size,
-        lastModified: obj.lastModified,
-        etag: obj.etag,
-        prefix: obj.prefix || null
-      })
-    }
-
-    res.json({
-      success: true,
-      bucket: bucketName,
-      prefix: prefix,
-      totalObjects: allObjects.length,
-      objects: allObjects
-    })
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    })
-  }
-})
-
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 PhotoVault API server running on port ${PORT}`)
