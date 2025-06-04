@@ -255,6 +255,32 @@ curl -X POST \
 }
 ```
 
+### File Download
+
+#### `GET /buckets/:bucketName/download`
+Download a specific file from a bucket.
+
+**Query Parameters:**
+- `object` (string, required) - The object path to download
+
+**Examples:**
+
+**Download file from folder:**
+```bash
+GET /buckets/photovault/download?object=250604/tattoo.jpg
+```
+
+**Download file from root:**
+```bash
+GET /buckets/photovault/download?object=photo.jpg
+```
+
+**Response:**
+- Returns the actual file content with appropriate headers
+- Sets `Content-Type` based on file type
+- Sets `Content-Disposition` with original filename
+- Streams file directly (no JSON wrapper)
+
 ## Environment Variables
 
 Create a `.env` file with the following variables:

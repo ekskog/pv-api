@@ -419,7 +419,65 @@ app.post('/buckets/:bucketName/upload', upload.array('files'), async (req, res) 
   }
 })
 
+// GET /buckets/:bucketName/download - Get/download a specific object
+app.get('/buckets/:bucketName/download', async (req, res) => {
+  try {
+    const { bucketName } = req.params
+    const { object } = req.query
 
+    if (!object) {
+      return res.status(400).json({
+        success: false,
+        error: 'Object name is required'
+      })
+    }
+
+    // Check if bucket exists
+    const bucketExists = await minioClient.bucketExists(bucketName)
+    if (!bucketExists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Bucket not found'
+      })
+    }
+
+    // Get object metadata first to check if it exists
+    let objectStat
+    try {
+      objectStat = await minioClient.statObject(bucketName, object)
+    } catch (error) {
+      if (error.code === 'NotFound') {
+        return res.status(404).json({
+          success: false,
+          error: 'Object not found'
+        })
+      }
+      throw error
+    }
+
+    // Stream the object directly to the response
+    const objectStream = await minioClient.getObject(bucketName, object)
+    
+    // Set appropriate headers
+    res.setHeader('Content-Type', objectStat.metaData['content-type'] || 'application/octet-stream')
+    res.setHeader('Content-Length', objectStat.size)
+    res.setHeader('Last-Modified', objectStat.lastModified)
+    res.setHeader('ETag', objectStat.etag)
+    
+    // Optional: Set Content-Disposition to download file with original name
+    const filename = object.split('/').pop()
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+
+    // Pipe the object stream to response
+    objectStream.pipe(res)
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
 
 // Start server
 app.listen(PORT, () => {
