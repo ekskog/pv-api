@@ -126,24 +126,34 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
     const objects = []
     const folders = []
 
-    const stream = minioClient.listObjectsV2(bucketName, prefix, true, delimiter)
+    // Use non-recursive listing to get immediate children only
+    const stream = minioClient.listObjectsV2(bucketName, prefix, false, delimiter)
     
     for await (const obj of stream) {
       if (obj.prefix) {
-        // This is a folder/prefix
+        // This is a folder/prefix - remove the trailing slash for display
+        const folderName = obj.prefix.replace(/\/$/, '')
+        const displayName = prefix ? folderName.substring(prefix.length) : folderName
+        
         folders.push({
-          name: obj.prefix,
+          name: displayName,
+          fullPath: obj.prefix,
           type: 'folder'
         })
       } else {
-        // This is a file/object
-        objects.push({
-          name: obj.name,
-          size: obj.size,
-          lastModified: obj.lastModified,
-          etag: obj.etag,
-          type: 'file'
-        })
+        // This is a file/object - skip empty folder marker objects
+        if (!obj.name.endsWith('/') || obj.size > 0) {
+          const displayName = prefix ? obj.name.substring(prefix.length) : obj.name
+          
+          objects.push({
+            name: displayName,
+            fullPath: obj.name,
+            size: obj.size,
+            lastModified: obj.lastModified,
+            etag: obj.etag,
+            type: 'file'
+          })
+        }
       }
     }
 
@@ -188,8 +198,34 @@ app.post('/buckets/:bucketName/folders', async (req, res) => {
       })
     }
 
-    // Ensure folder path ends with /
-    const normalizedPath = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
+    // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
+    let cleanPath = folderPath.trim()
+    cleanPath = cleanPath.replace(/^\/+/, '') // Remove leading slashes
+    cleanPath = cleanPath.replace(/\/+$/, '') // Remove trailing slashes
+    cleanPath = cleanPath.replace(/\/+/g, '/') // Replace multiple slashes with single slash
+    
+    if (!cleanPath) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid folder path'
+      })
+    }
+    
+    const normalizedPath = `${cleanPath}/`
+    
+    // Check if folder already exists by looking for the exact folder marker object
+    try {
+      await minioClient.statObject(bucketName, normalizedPath)
+      return res.status(409).json({
+        success: false,
+        error: 'Folder already exists'
+      })
+    } catch (err) {
+      // Folder doesn't exist, which is what we want
+      if (err.code !== 'NotFound') {
+        throw err
+      }
+    }
     
     // Create an empty object to represent the folder
     const emptyBuffer = Buffer.alloc(0)
@@ -197,10 +233,11 @@ app.post('/buckets/:bucketName/folders', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: `Folder '${normalizedPath}' created successfully`,
+      message: `Folder '${cleanPath}' created successfully`,
       data: {
         bucket: bucketName,
-        folderPath: normalizedPath
+        folderPath: normalizedPath,
+        folderName: cleanPath
       }
     })
   } catch (error) {
@@ -262,6 +299,51 @@ app.delete('/buckets/:bucketName/folders', async (req, res) => {
         folderPath: normalizedPath,
         deletedObjects: objectsToDelete.length
       }
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+// DEBUG endpoint - List raw objects without filtering
+app.get('/debug/buckets/:bucketName/raw', async (req, res) => {
+  try {
+    const { bucketName } = req.params
+    const { prefix = '' } = req.query
+
+    // Check if bucket exists
+    const bucketExists = await minioClient.bucketExists(bucketName)
+    if (!bucketExists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Bucket not found'
+      })
+    }
+
+    const allObjects = []
+
+    // Get ALL objects recursively
+    const stream = minioClient.listObjectsV2(bucketName, prefix, true)
+    
+    for await (const obj of stream) {
+      allObjects.push({
+        name: obj.name,
+        size: obj.size,
+        lastModified: obj.lastModified,
+        etag: obj.etag,
+        prefix: obj.prefix || null
+      })
+    }
+
+    res.json({
+      success: true,
+      bucket: bucketName,
+      prefix: prefix,
+      totalObjects: allObjects.length,
+      objects: allObjects
     })
   } catch (error) {
     res.status(500).json({
