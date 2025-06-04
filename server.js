@@ -219,8 +219,34 @@ app.post('/buckets/:bucketName/folders', async (req, res) => {
       })
     }
 
-    // Ensure folder path ends with /
-    const normalizedPath = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
+    // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
+    let cleanPath = folderPath.trim()
+    cleanPath = cleanPath.replace(/^\/+/, '') // Remove leading slashes
+    cleanPath = cleanPath.replace(/\/+$/, '') // Remove trailing slashes
+    cleanPath = cleanPath.replace(/\/+/g, '/') // Replace multiple slashes with single slash
+    
+    if (!cleanPath) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid folder path'
+      })
+    }
+    
+    const normalizedPath = `${cleanPath}/`
+    
+    // Check if folder already exists by looking for the exact folder marker object
+    try {
+      await minioClient.statObject(bucketName, normalizedPath)
+      return res.status(409).json({
+        success: false,
+        error: 'Folder already exists'
+      })
+    } catch (err) {
+      // Folder doesn't exist, which is what we want
+      if (err.code !== 'NotFound') {
+        throw err
+      }
+    }
     
     // Create an empty object to represent the folder
     const emptyBuffer = Buffer.alloc(0)
@@ -228,10 +254,11 @@ app.post('/buckets/:bucketName/folders', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: `Folder '${normalizedPath}' created successfully`,
+      message: `Folder '${cleanPath}' created successfully`,
       data: {
         bucket: bucketName,
-        folderPath: normalizedPath
+        folderPath: normalizedPath,
+        folderName: cleanPath
       }
     })
   } catch (error) {
