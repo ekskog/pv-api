@@ -1,6 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
+const multer = require('multer')
 const { Client } = require('minio')
 
 const app = express()
@@ -9,6 +10,14 @@ const PORT = process.env.PORT || 3001
 // Middleware
 app.use(cors())
 app.use(express.json())
+
+// Configure multer for file uploads (store in memory)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  }
+})
 
 // MinIO Client Configuration
 const minioClient = new Client({
@@ -112,7 +121,7 @@ app.post('/buckets', async (req, res) => {
 app.get('/buckets/:bucketName/objects', async (req, res) => {
   try {
     const { bucketName } = req.params
-    const { prefix = '', delimiter = '/' } = req.query
+    const { prefix = '', recursive = 'false' } = req.query
 
     // Check if bucket exists
     const bucketExists = await minioClient.bucketExists(bucketName)
@@ -125,18 +134,17 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
 
     const objects = []
     const folders = []
+    const isRecursive = recursive === 'true'
 
-    const stream = minioClient.listObjectsV2(bucketName, prefix, true, delimiter)
+    // For recursive: use listObjects with recursive=true, no delimiter  
+    // For non-recursive: use listObjectsV2 with delimiter to show folders
+    let stream
     
-    for await (const obj of stream) {
-      if (obj.prefix) {
-        // This is a folder/prefix
-        folders.push({
-          name: obj.prefix,
-          type: 'folder'
-        })
-      } else {
-        // This is a file/object
+    if (isRecursive) {
+      // Recursive listing - get all objects
+      stream = minioClient.listObjects(bucketName, prefix, true)
+      
+      for await (const obj of stream) {
         objects.push({
           name: obj.name,
           size: obj.size,
@@ -145,6 +153,28 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
           type: 'file'
         })
       }
+    } else {
+      // Non-recursive listing - show folder structure
+      stream = minioClient.listObjectsV2(bucketName, prefix, false, '/')
+      
+      for await (const obj of stream) {
+        if (obj.prefix) {
+          // This is a folder/prefix
+          folders.push({
+            name: obj.prefix,
+            type: 'folder'
+          })
+        } else {
+          // This is a file/object
+          objects.push({
+            name: obj.name,
+            size: obj.size,
+            lastModified: obj.lastModified,
+            etag: obj.etag,
+            type: 'file'
+          })
+        }
+      }
     }
 
     res.json({
@@ -152,6 +182,7 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
       data: {
         bucket: bucketName,
         prefix: prefix || '/',
+        recursive: isRecursive,
         folders: folders,
         objects: objects,
         totalFolders: folders.length,
@@ -270,6 +301,98 @@ app.delete('/buckets/:bucketName/folders', async (req, res) => {
     })
   }
 })
+
+// POST /buckets/:bucketName/upload - Upload file(s) to a bucket with optional folder path
+app.post('/buckets/:bucketName/upload', upload.array('files'), async (req, res) => {
+  try {
+    const { bucketName } = req.params
+    const { folderPath = '' } = req.body
+    const files = req.files
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No files provided'
+      })
+    }
+
+    // Check if bucket exists
+    const bucketExists = await minioClient.bucketExists(bucketName)
+    if (!bucketExists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Bucket not found'
+      })
+    }
+
+    const uploadResults = []
+    const errors = []
+
+    for (const file of files) {
+      try {
+        // Construct object name with folder path
+        const objectName = folderPath 
+          ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
+          : file.originalname
+
+        // Upload file to MinIO
+        const uploadInfo = await minioClient.putObject(
+          bucketName, 
+          objectName, 
+          file.buffer,
+          file.size,
+          {
+            'Content-Type': file.mimetype,
+            'X-Amz-Meta-Original-Name': file.originalname,
+            'X-Amz-Meta-Upload-Date': new Date().toISOString()
+          }
+        )
+
+        uploadResults.push({
+          originalName: file.originalname,
+          objectName: objectName,
+          size: file.size,
+          mimetype: file.mimetype,
+          etag: uploadInfo.etag,
+          versionId: uploadInfo.versionId
+        })
+      } catch (uploadError) {
+        errors.push({
+          file: file.originalname,
+          error: uploadError.message
+        })
+      }
+    }
+
+    // Return results
+    const response = {
+      success: errors.length === 0,
+      data: {
+        bucket: bucketName,
+        folderPath: folderPath || '/',
+        uploaded: uploadResults,
+        uploadedCount: uploadResults.length,
+        totalFiles: files.length
+      }
+    }
+
+    if (errors.length > 0) {
+      response.errors = errors
+      response.errorCount = errors.length
+    }
+
+    const statusCode = errors.length === 0 ? 201 : (uploadResults.length > 0 ? 207 : 400)
+    res.status(statusCode).json(response)
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+
 
 // Start server
 app.listen(PORT, () => {
