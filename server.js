@@ -94,8 +94,8 @@ app.get('/health', async (req, res) => {
 
 // MinIO API Routes (Protected)
 
-// GET /buckets - List all buckets
-app.get('/buckets', authenticateToken, async (req, res) => {
+// GET /buckets - List all buckets (public access for album browsing)
+app.get('/buckets', async (req, res) => {
   try {
     const buckets = await minioClient.listBuckets()
     res.json({
@@ -146,8 +146,8 @@ app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) =
   }
 })
 
-// GET /buckets/:bucketName/objects - List objects in a bucket (with optional prefix for folders)
-app.get('/buckets/:bucketName/objects', authenticateToken, async (req, res) => {
+// GET /buckets/:bucketName/objects - List objects in a bucket (Public access for album browsing)
+app.get('/buckets/:bucketName/objects', async (req, res) => {
   try {
     const { bucketName } = req.params
     const { prefix = '', recursive = 'false' } = req.query
@@ -470,8 +470,8 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
   }
 })
 
-// GET /buckets/:bucketName/download - Get/download a specific object
-app.get('/buckets/:bucketName/download', authenticateToken, async (req, res) => {
+// GET /buckets/:bucketName/download - Get/download a specific object (Public access for images)
+app.get('/buckets/:bucketName/download', async (req, res) => {
   try {
     const { bucketName } = req.params
     const { object } = req.query
