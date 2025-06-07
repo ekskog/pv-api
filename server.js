@@ -9,12 +9,16 @@ const database = require('./config/database')
 const authRoutes = require('./routes/auth')
 const { authenticateToken, requireRole } = require('./middleware/auth')
 
+// Import services
+const UploadService = require('./services/upload-service')
+
 const app = express()
 const PORT = process.env.PORT || 3001
 
 // Middleware
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '500mb' }))
+app.use(express.urlencoded({ limit: '500mb', extended: true }))
 
 // Initialize database connection if not in demo mode
 async function initializeDatabase() {
@@ -39,7 +43,7 @@ async function initializeDatabase() {
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
+    fileSize: 500 * 1024 * 1024 // 500MB limit for large HEIC files
   }
 })
 
@@ -51,6 +55,9 @@ const minioClient = new Client({
   accessKey: process.env.MINIO_ACCESS_KEY,
   secretKey: process.env.MINIO_SECRET_KEY
 })
+
+// Initialize Upload Service
+const uploadService = new UploadService(minioClient)
 
 // Test route
 app.get('/', (req, res) => {
@@ -176,7 +183,7 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
       for await (const obj of stream) {
         // Skip folder placeholder files from the listing
         if (obj.name.endsWith('/.folderkeeper')) {
-          continue
+          continueapt 
         }
         
         objects.push({
@@ -403,44 +410,8 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
       })
     }
 
-    const uploadResults = []
-    const errors = []
-
-    for (const file of files) {
-      try {
-        // Construct object name with folder path
-        const objectName = folderPath 
-          ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
-          : file.originalname
-
-        // Upload file to MinIO
-        const uploadInfo = await minioClient.putObject(
-          bucketName, 
-          objectName, 
-          file.buffer,
-          file.size,
-          {
-            'Content-Type': file.mimetype,
-            'X-Amz-Meta-Original-Name': file.originalname,
-            'X-Amz-Meta-Upload-Date': new Date().toISOString()
-          }
-        )
-
-        uploadResults.push({
-          originalName: file.originalname,
-          objectName: objectName,
-          size: file.size,
-          mimetype: file.mimetype,
-          etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId
-        })
-      } catch (uploadError) {
-        errors.push({
-          file: file.originalname,
-          error: uploadError.message
-        })
-      }
-    }
+    // Use UploadService to handle file processing and upload
+    const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
 
     // Return results
     const response = {
