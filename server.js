@@ -4,12 +4,36 @@ const cors = require('cors')
 const multer = require('multer')
 const { Client } = require('minio')
 
+// Import authentication components
+const database = require('./config/database')
+const authRoutes = require('./routes/auth')
+const { authenticateToken, requireRole } = require('./middleware/auth')
+
 const app = express()
 const PORT = process.env.PORT || 3001
 
 // Middleware
 app.use(cors())
 app.use(express.json())
+
+// Initialize database connection if not in demo mode
+async function initializeDatabase() {
+  const authMode = process.env.AUTH_MODE || 'demo'
+  
+  if (authMode === 'database') {
+    try {
+      console.log('🔌 Initializing database connection...')
+      await database.initialize()
+      console.log('✅ Database initialized successfully')
+    } catch (error) {
+      console.error('❌ Database initialization failed:', error.message)
+      console.log('🔄 Falling back to demo mode')
+      process.env.AUTH_MODE = 'demo'
+    }
+  } else {
+    console.log('🎭 Running in demo authentication mode')
+  }
+}
 
 // Configure multer for file uploads (store in memory)
 const upload = multer({ 
@@ -30,12 +54,17 @@ const minioClient = new Client({
 
 // Test route
 app.get('/', (req, res) => {
+  const authMode = process.env.AUTH_MODE || 'demo'
   res.json({
     message: 'PhotoVault API is running!',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    authMode: authMode
   })
 })
+
+// Authentication routes
+app.use('/auth', authRoutes)
 
 // Health check route
 app.get('/health', async (req, res) => {
@@ -63,10 +92,10 @@ app.get('/health', async (req, res) => {
   }
 })
 
-// MinIO API Routes
+// MinIO API Routes (Protected)
 
 // GET /buckets - List all buckets
-app.get('/buckets', async (req, res) => {
+app.get('/buckets', authenticateToken, async (req, res) => {
   try {
     const buckets = await minioClient.listBuckets()
     res.json({
@@ -82,8 +111,8 @@ app.get('/buckets', async (req, res) => {
   }
 })
 
-// POST /buckets - Create a new bucket
-app.post('/buckets', async (req, res) => {
+// POST /buckets - Create a new bucket (Admin only)
+app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { bucketName, region = 'us-east-1' } = req.body
     
@@ -118,7 +147,7 @@ app.post('/buckets', async (req, res) => {
 })
 
 // GET /buckets/:bucketName/objects - List objects in a bucket (with optional prefix for folders)
-app.get('/buckets/:bucketName/objects', async (req, res) => {
+app.get('/buckets/:bucketName/objects', authenticateToken, async (req, res) => {
   try {
     const { bucketName } = req.params
     const { prefix = '', recursive = 'false' } = req.query
@@ -145,6 +174,11 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
       stream = minioClient.listObjects(bucketName, prefix, true)
       
       for await (const obj of stream) {
+        // Skip folder placeholder files from the listing
+        if (obj.name.endsWith('/.folderkeeper')) {
+          continue
+        }
+        
         objects.push({
           name: obj.name,
           size: obj.size,
@@ -165,6 +199,11 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
             type: 'folder'
           })
         } else {
+          // Skip folder placeholder files from the listing
+          if (obj.name.endsWith('/.folderkeeper')) {
+            continue
+          }
+          
           // This is a file/object
           objects.push({
             name: obj.name,
@@ -197,8 +236,8 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
   }
 })
 
-// POST /buckets/:bucketName/folders - Create a folder (by creating an empty object with trailing slash)
-app.post('/buckets/:bucketName/folders', async (req, res) => {
+// POST /buckets/:bucketName/folders - Create a folder (Admin only)
+app.post('/buckets/:bucketName/folders', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { bucketName } = req.params
     const { folderPath } = req.body
@@ -234,23 +273,35 @@ app.post('/buckets/:bucketName/folders', async (req, res) => {
     
     const normalizedPath = `${cleanPath}/`
     
-    // Check if folder already exists by looking for the exact folder marker object
-    try {
-      await minioClient.statObject(bucketName, normalizedPath)
+    // Check if folder already exists by looking for any objects with this prefix
+    const existingObjects = []
+    const stream = minioClient.listObjectsV2(bucketName, normalizedPath, false)
+    
+    for await (const obj of stream) {
+      existingObjects.push(obj)
+      break // We only need to check if any object exists with this prefix
+    }
+    
+    if (existingObjects.length > 0) {
       return res.status(409).json({
         success: false,
         error: 'Folder already exists'
       })
-    } catch (err) {
-      // Folder doesn't exist, which is what we want
-      if (err.code !== 'NotFound') {
-        throw err
-      }
     }
     
-    // Create an empty object to represent the folder
-    const emptyBuffer = Buffer.alloc(0)
-    await minioClient.putObject(bucketName, normalizedPath, emptyBuffer)
+    // Instead of creating an empty folder marker, create a hidden placeholder file
+    // This ensures the folder exists without creating MinIO metadata issues
+    const placeholderPath = `${normalizedPath}.folderkeeper`
+    const placeholderContent = Buffer.from(JSON.stringify({
+      type: 'folder_placeholder',
+      created: new Date().toISOString(),
+      folderName: cleanPath
+    }))
+    
+    await minioClient.putObject(bucketName, placeholderPath, placeholderContent, placeholderContent.length, {
+      'Content-Type': 'application/json',
+      'X-Amz-Meta-Type': 'folder-placeholder'
+    })
 
     res.status(201).json({
       success: true,
@@ -269,8 +320,8 @@ app.post('/buckets/:bucketName/folders', async (req, res) => {
   }
 })
 
-// DELETE /buckets/:bucketName/folders - Delete a folder and all its contents
-app.delete('/buckets/:bucketName/folders', async (req, res) => {
+// DELETE /buckets/:bucketName/folders - Delete a folder and all its contents (Admin only)
+app.delete('/buckets/:bucketName/folders', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { bucketName } = req.params
     const { folderPath } = req.body
@@ -330,7 +381,7 @@ app.delete('/buckets/:bucketName/folders', async (req, res) => {
 })
 
 // POST /buckets/:bucketName/upload - Upload file(s) to a bucket with optional folder path
-app.post('/buckets/:bucketName/upload', upload.array('files'), async (req, res) => {
+app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files'), async (req, res) => {
   try {
     const { bucketName } = req.params
     const { folderPath = '' } = req.body
@@ -420,7 +471,7 @@ app.post('/buckets/:bucketName/upload', upload.array('files'), async (req, res) 
 })
 
 // GET /buckets/:bucketName/download - Get/download a specific object
-app.get('/buckets/:bucketName/download', async (req, res) => {
+app.get('/buckets/:bucketName/download', authenticateToken, async (req, res) => {
   try {
     const { bucketName } = req.params
     const { object } = req.query
@@ -479,9 +530,39 @@ app.get('/buckets/:bucketName/download', async (req, res) => {
   }
 })
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 PhotoVault API server running on port ${PORT}`)
-  console.log(`📊 Health check: http://localhost:${PORT}/health`)
-  console.log(`🗄️  MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
+// Start server with database initialization
+async function startServer() {
+  try {
+    // Initialize database connection
+    await initializeDatabase()
+    
+    // Start HTTP server
+    app.listen(PORT, () => {
+      const authMode = process.env.AUTH_MODE || 'demo'
+      console.log(`🚀 PhotoVault API server running on port ${PORT}`)
+      console.log(`📊 Health check: http://localhost:${PORT}/health`)
+      console.log(`🔐 Authentication: http://localhost:${PORT}/auth/status`)
+      console.log(`🗄️  MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
+      console.log(`🎭 Auth Mode: ${authMode}`)
+      
+      if (authMode === 'demo') {
+        console.log('👤 Demo users: admin/admin123, user/user123')
+      }
+    })
+  } catch (error) {
+    console.error('❌ Failed to start server:', error.message)
+    process.exit(1)
+  }
+}
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down server...')
+  if (process.env.AUTH_MODE === 'database') {
+    await database.close()
+  }
+  process.exit(0)
 })
+
+// Start the server
+startServer()

@@ -23,7 +23,10 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "minio": "^8.0.5",
-    "multer": "^2.0.1"
+    "multer": "^2.0.1",
+    "mysql2": "^3.6.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
