@@ -155,6 +155,13 @@ app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) =
 
 // GET /buckets/:bucketName/objects - List objects in a bucket (Public access for album browsing)
 app.get('/buckets/:bucketName/objects', async (req, res) => {
+  console.log('\n🌐 INCOMING REQUEST: GET /buckets/:bucketName/objects')
+  console.log('   📝 Headers:', JSON.stringify(req.headers, null, 2))
+  console.log('   🎯 Params:', req.params)
+  console.log('   ❓ Query:', req.query)
+  console.log('   🌍 Origin:', req.get('Origin') || 'No origin header')
+  console.log('   🔧 User-Agent:', req.get('User-Agent') || 'No user-agent')
+  
   try {
     const { bucketName } = req.params
     const { prefix = '', recursive = 'false' } = req.query
@@ -223,7 +230,7 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
       }
     }
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         bucket: bucketName,
@@ -234,8 +241,27 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
         totalFolders: folders.length,
         totalObjects: objects.length
       }
-    })
+    }
+    
+    console.log('📤 RESPONSE DATA:')
+    console.log('   ✅ Success:', responseData.success)
+    console.log('   📁 Bucket:', responseData.data.bucket)
+    console.log('   📂 Prefix:', responseData.data.prefix)
+    console.log('   🔄 Recursive:', responseData.data.recursive)
+    console.log('   📊 Total Objects:', responseData.data.totalObjects)
+    console.log('   📊 Total Folders:', responseData.data.totalFolders)
+    if (responseData.data.objects.length > 0) {
+      console.log('   📄 Objects found:')
+      responseData.data.objects.forEach((obj, i) => {
+        console.log(`      ${i + 1}. ${obj.name} (${obj.size} bytes)`)
+      })
+    } else {
+      console.log('   📄 No objects found')
+    }
+    
+    res.json(responseData)
   } catch (error) {
+    console.log('❌ ERROR in /buckets/:bucketName/objects:', error.message)
     res.status(500).json({
       success: false,
       error: error.message
@@ -394,24 +420,59 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
     const { folderPath = '' } = req.body
     const files = req.files
 
+    console.log(`\n🚀 UPLOAD REQUEST RECEIVED:`);
+    console.log(`   - Bucket: ${bucketName}`);
+    console.log(`   - Folder: ${folderPath || 'root'}`);
+    console.log(`   - Files: ${files ? files.length : 0}`);
+    console.log(`   - User: ${req.user?.username || 'unknown'}`);
+
     if (!files || files.length === 0) {
+      console.log(`❌ UPLOAD FAILED: No files provided`);
       return res.status(400).json({
         success: false,
         error: 'No files provided'
       })
     }
 
+    console.log(`📋 Files to upload:`);
+    files.forEach((file, index) => {
+      console.log(`   ${index + 1}. ${file.originalname} (${file.size} bytes, ${file.mimetype})`);
+    });
+
     // Check if bucket exists
     const bucketExists = await minioClient.bucketExists(bucketName)
     if (!bucketExists) {
+      console.log(`❌ UPLOAD FAILED: Bucket '${bucketName}' not found`);
       return res.status(404).json({
         success: false,
         error: 'Bucket not found'
       })
     }
 
+    console.log(`✅ Bucket '${bucketName}' exists - proceeding with upload processing...`);
+
     // Use UploadService to handle file processing and upload
+    console.log(`🔄 Calling UploadService.processMultipleFiles()...`);
     const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
+
+    console.log(`\n🎉 UPLOAD PROCESSING COMPLETE:`);
+    console.log(`   - Total files processed: ${files.length}`);
+    console.log(`   - Successful uploads: ${uploadResults.length}`);
+    console.log(`   - Failed uploads: ${errors.length}`);
+    
+    if (uploadResults.length > 0) {
+      console.log(`✅ Successfully uploaded files:`);
+      uploadResults.forEach((result, index) => {
+        console.log(`   ${index + 1}. ${result.objectName} (${result.size} bytes, ${result.mimetype})`);
+      });
+    }
+    
+    if (errors.length > 0) {
+      console.log(`❌ Failed uploads:`);
+      errors.forEach((error, index) => {
+        console.log(`   ${index + 1}. ${error.filename}: ${error.error}`);
+      });
+    }
 
     // Return results
     const response = {
@@ -431,9 +492,21 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
     }
 
     const statusCode = errors.length === 0 ? 201 : (uploadResults.length > 0 ? 207 : 400)
+    
+    console.log(`📤 SENDING RESPONSE:`);
+    console.log(`   - Status Code: ${statusCode}`);
+    console.log(`   - Success: ${response.success}`);
+    console.log(`   - Files uploaded: ${uploadResults.length}/${files.length}`);
+    console.log(`🎯 UPLOAD REQUEST COMPLETED\n`);
+    
     res.status(statusCode).json(response)
 
   } catch (error) {
+    console.log(`💥 UPLOAD ERROR:`);
+    console.log(`   - Error: ${error.message}`);
+    console.log(`   - Stack: ${error.stack}`);
+    console.log(`❌ UPLOAD REQUEST FAILED\n`);
+    
     res.status(500).json({
       success: false,
       error: error.message
