@@ -3,7 +3,7 @@ const sharp = require('sharp');
 const heicConvert = require('heic-convert');
 const fs = require('fs');
 const path = require('path');
-const debugService = require('./services/debug-service');
+const debugService = require('./debug-service');
 
 class HeicProcessor {
   constructor() {

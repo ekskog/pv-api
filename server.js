@@ -351,66 +351,6 @@ app.post('/buckets/:bucketName/folders', authenticateToken, requireRole('admin')
   }
 })
 
-// DELETE /buckets/:bucketName/folders - Delete a folder and all its contents (Admin only)
-app.delete('/buckets/:bucketName/folders', authenticateToken, requireRole('admin'), async (req, res) => {
-  try {
-    const { bucketName } = req.params
-    const { folderPath } = req.body
-
-    if (!folderPath) {
-      return res.status(400).json({
-        success: false,
-        error: 'Folder path is required'
-      })
-    }
-
-    // Check if bucket exists
-    const bucketExists = await minioClient.bucketExists(bucketName)
-    if (!bucketExists) {
-      return res.status(404).json({
-        success: false,
-        error: 'Bucket not found'
-      })
-    }
-
-    // Ensure folder path ends with /
-    const normalizedPath = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
-    
-    // List all objects with this prefix
-    const objectsToDelete = []
-    const stream = minioClient.listObjectsV2(bucketName, normalizedPath, true)
-    
-    for await (const obj of stream) {
-      objectsToDelete.push(obj.name)
-    }
-
-    if (objectsToDelete.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Folder not found or already empty'
-      })
-    }
-
-    // Delete all objects in the folder
-    await minioClient.removeObjects(bucketName, objectsToDelete)
-
-    res.json({
-      success: true,
-      message: `Folder '${normalizedPath}' and ${objectsToDelete.length} objects deleted successfully`,
-      data: {
-        bucket: bucketName,
-        folderPath: normalizedPath,
-        deletedObjects: objectsToDelete.length
-      }
-    })
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    })
-  }
-})
-
 // POST /buckets/:bucketName/upload - Upload file(s) to a bucket with optional folder path
 app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files'), async (req, res) => {
   try {

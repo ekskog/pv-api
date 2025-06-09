@@ -26,6 +26,9 @@ spec:
             name: photovault-api-config
         - secretRef:
             name: photovault-api-secret
+        volumeMounts:
+        - name: log-storage
+          mountPath: /app/logs
         startupProbe:
           httpGet:
             path: /
@@ -57,6 +60,9 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
+      volumes:
+      - name: log-storage
+        emptyDir: {}  # Ephemeral storage for logs in Kubernetes
 ---
 apiVersion: v1
 kind: Service

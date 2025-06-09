@@ -7,6 +7,8 @@ data:
   PORT: "3001"
   NODE_ENV: "production"
   API_PREFIX: "/api/v1"
+  SILENT_MODE: "true"  # Ensures absolutely no console output in Kubernetes
+  LOG_DIR: "/app/logs"  # Dedicated log directory for file logging
   # Debug Configuration (uncomment to enable debug output)
   # DEBUG: "hbvu:server:*,hbvu:api:*,hbvu:auth:*"
   # DEBUG_PATTERN: "!hbvu:performance:*"

@@ -1,5 +1,5 @@
 // Upload Service - Handles file uploads with HEIC processing
-const HeicProcessor = require('../heic-processor');
+const HeicProcessor = require('./heic-processor');
 const debugService = require('./debug-service');
 
 class UploadService {
@@ -9,14 +9,22 @@ class UploadService {
   }
 
   /**
-   * Process and upload a single file
-   * @param {Object} file - Multer file object
-   * @param {string} bucketName - MinIO bucket  static isImageFile(filename) {
+   * Check if a file is a regular image file (not HEIC)
+   * @param {string} filename - Filename to check
+   * @returns {boolean} True if it's a regular image file
+   */
+  static isImageFile(filename) {
     const imageExtensions = /\.(jpg|jpeg|png|webp|tiff|tif|bmp)$/i;
     const isImage = imageExtensions.test(filename);
     debugService.image.metadata(`Image file check for ${filename}: ${isImage}`)
     return isImage;
-  }   * @param {string} folderPath - Upload folder path
+  }
+
+  /**
+   * Process and upload a single file
+   * @param {Object} file - Multer file object
+   * @param {string} bucketName - MinIO bucket name
+   * @param {string} folderPath - Upload folder path
    * @returns {Array} Upload results
    */
   async processAndUploadFile(file, bucketName, folderPath = '') {
@@ -31,7 +39,7 @@ class UploadService {
     
     const uploadResults = [];
     const isHeic = HeicProcessor.isHeicFile(file.originalname);
-    const isImage = this.isImageFile(file.originalname);
+    const isImage = UploadService.isImageFile(file.originalname);
     
     debugService.upload.processing(`File type detection`, {
       filename: file.originalname,
@@ -86,13 +94,20 @@ class UploadService {
         hasExif: !!exifData
       });
 
-      // Generate only full-size AVIF variant (per user requirements: no thumbnails, no originals)
+      // Generate full-size AVIF and thumbnail variants
       const variants = [
         {
           name: 'full',
           width: null, // Keep original dimensions
           height: null,
           quality: 90,
+          format: 'avif'
+        },
+        {
+          name: 'thumbnail',
+          width: 300,
+          height: 300,
+          quality: 80,
           format: 'avif'
         }
       ];
@@ -122,6 +137,17 @@ class UploadService {
             sharpImage = sharpImage.withMetadata();
           }
           processedBuffer = await sharpImage
+            .heif({ quality: variant.quality, compression: 'av1' })
+            .toBuffer();
+        } else if (variant.name === 'thumbnail') {
+          debugService.image.avif(`Creating thumbnail AVIF (${variant.width}x${variant.height})`);
+          // For thumbnail, resize and convert
+          processedBuffer = await image.clone()
+            .rotate() // Auto-rotate based on EXIF orientation data
+            .resize(variant.width, variant.height, { 
+              fit: 'cover', 
+              position: 'center' 
+            })
             .heif({ quality: variant.quality, compression: 'av1' })
             .toBuffer();
         }
@@ -435,18 +461,6 @@ class UploadService {
     }
 
     return { results: allResults, errors };
-  }
-
-  /**
-   * Check if file is an image format that should be converted to AVIF
-   * @param {string} filename 
-   * @returns {boolean}
-   */
-  isImageFile(filename) {
-    const imageExtensions = /\.(jpg|jpeg|png|webp|tiff|tif|bmp)$/i;
-    const isImage = imageExtensions.test(filename);
-    debugService.image.metadata(`Image file check for ${filename}: ${isImage}`)
-    return isImage;
   }
 }
 
