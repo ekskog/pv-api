@@ -114,7 +114,8 @@ class UploadService {
         if (variant.name === 'full') {
           debugService.image.avif(`Creating full-size AVIF (original dimensions)`);
           // For full-size, just convert format while preserving EXIF
-          let sharpImage = image.clone();
+          let sharpImage = image.clone()
+            .rotate(); // Auto-rotate based on EXIF orientation data
           if (exifData) {
             debugService.image.metadata(`Preserving EXIF metadata for ${file.originalname}`);
             // Preserve EXIF data
