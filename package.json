@@ -6,13 +6,6 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "dev:debug": "DEBUG=hbvu:* nodemon server.js",
-    "dev:debug:server": "DEBUG=hbvu:server:*,hbvu:api:* nodemon server.js",
-    "dev:debug:upload": "DEBUG=hbvu:upload:*,hbvu:image:*,hbvu:storage:* nodemon server.js",
-    "dev:debug:auth": "DEBUG=hbvu:auth:* nodemon server.js",
-    "dev:debug:db": "DEBUG=hbvu:database:* nodemon server.js",
-    "dev:debug:performance": "DEBUG=hbvu:performance:* nodemon server.js",
-    "start:debug": "DEBUG=hbvu:* node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -28,7 +21,6 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "debug": "^4.4.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "heic-cli": "^1.1.1",

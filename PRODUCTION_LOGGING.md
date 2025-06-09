@@ -133,10 +133,10 @@ volumes:
 - **Cleanup**: Automatic removal of old log files
 - **Process**: Non-blocking background operation
 
-### Manual Rotation
+### Manual Cleanup
 ```javascript
-const debugService = require('./services/debug-service');
-await debugService.rotateLogFiles(maxAgeDays);
+// Simple console-based logging is now used
+// Log rotation is handled by external log management tools
 ```
 
 ## Performance Considerations
@@ -158,35 +158,15 @@ await debugService.rotateLogFiles(maxAgeDays);
 
 ### Basic Logging
 ```javascript
-const debugService = require('./services/debug-service');
-
-// Server events
-await debugService.server.startup('API server started', { port: 3001 });
-
-// Upload processing
-await debugService.upload.processing('Converting HEIC to AVIF', {
-  filename: 'photo.HEIC',
-  size: '4.2MB'
-});
-
-// Performance timing
-const timer = await debugService.createTimer('upload', 'HEIC conversion');
-// ... processing ...
-await timer.end({ 
-  inputSize: '4.2MB', 
-  outputSize: '890KB',
-  conversionRatio: '79%'
-});
-```
-
-### Memory Monitoring
-```javascript
-await debugService.logMemoryUsage('AVIF conversion completed');
+// Simple console logging approach
+console.log('API server started on port', 3001);
+console.log('Processing HEIC to AVIF conversion for', filename);
+console.error('Upload failed:', error.message);
 ```
 
 ### Error Logging
 ```javascript
-await debugService.error('Upload failed', {
+console.error('Upload failed', {
   error: error.message,
   filename: 'photo.HEIC',
   step: 'HEIC processing'

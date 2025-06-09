@@ -1,7 +1,6 @@
 // Authentication middleware and utilities
 const jwt = require('jsonwebtoken')
 const database = require('../config/database')
-const debugService = require('../services/debug-service')
 
 // JWT secret key - should be in environment variables
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'
@@ -82,7 +81,7 @@ class AuthService {
     try {
       return await database.authenticateUser(username, password)
     } catch (error) {
-      debugService.auth.error('Database authentication error:', error.message)
+      console.error('Database authentication error:', error.message)
       return null
     }
   }
@@ -99,7 +98,7 @@ class AuthService {
       try {
         return await database.getUserById(userId)
       } catch (error) {
-        debugService.auth.error('Database getUserById error:', error.message)
+        console.error('Database getUserById error:', error.message)
         return null
       }
     }
@@ -139,7 +138,7 @@ const authenticateToken = async (req, res, next) => {
     req.user = user
     next()
   } catch (error) {
-    debugService.auth.error('Auth middleware error:', error.message)
+    console.error('Auth middleware error:', error.message)
     return res.status(403).json({
       success: false,
       error: 'Token verification failed'

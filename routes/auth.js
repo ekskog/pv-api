@@ -1,7 +1,6 @@
 // Authentication routes
 const express = require('express')
 const { AuthService, authenticateToken } = require('../middleware/auth')
-const debugService = require('../services/debug-service')
 
 const router = express.Router()
 
@@ -48,7 +47,7 @@ router.post('/login', async (req, res) => {
     })
 
   } catch (error) {
-    debugService.auth.error('Login error:', error.message)
+    console.error('Login error:', error.message)
     res.status(500).json({
       success: false,
       error: 'Internal server error during login'
@@ -72,7 +71,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       }
     })
   } catch (error) {
-    debugService.auth.error('Get user info error:', error.message)
+    console.error('Get user info error:', error.message)
     res.status(500).json({
       success: false,
       error: 'Failed to get user information'
@@ -118,7 +117,7 @@ router.post('/refresh', authenticateToken, async (req, res) => {
       }
     })
   } catch (error) {
-    debugService.auth.error('Token refresh error:', error.message)
+    console.error('Token refresh error:', error.message)
     res.status(500).json({
       success: false,
       error: 'Failed to refresh token'

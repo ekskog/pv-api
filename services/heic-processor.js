@@ -3,7 +3,6 @@ const sharp = require('sharp');
 const heicConvert = require('heic-convert');
 const fs = require('fs');
 const path = require('path');
-const debugService = require('./debug-service');
 
 class HeicProcessor {
   constructor() {
@@ -18,9 +17,6 @@ class HeicProcessor {
    * @returns {Object} Processed variants
    */
   async processHeicFile(heicBuffer, fileName) {
-    debugService.image.heic(`Starting HEIC processing for ${fileName}`)
-    debugService.image.metadata(`Input buffer size: ${heicBuffer.length} bytes`)
-    
     if (!this.heicSupported) {
       throw new Error('HEIC processing not supported - please install libheif');
     }
@@ -29,7 +25,6 @@ class HeicProcessor {
     const results = {};
 
     try {
-      debugService.image.heic('Converting HEIC to JPEG using heic-convert...')
       // First convert HEIC to JPEG using heic-convert
       const jpegBuffer = await heicConvert({
         buffer: heicBuffer,
@@ -37,17 +32,9 @@ class HeicProcessor {
         quality: 1 // Use maximum quality for initial conversion
       });
 
-      debugService.image.heic(`HEIC to JPEG conversion complete - JPEG size: ${jpegBuffer.length} bytes`)
-
       // Then use Sharp to create variants from the JPEG
       const image = sharp(jpegBuffer);
       const metadata = await image.metadata();
-      
-      debugService.image.metadata('JPEG metadata', {
-        format: metadata.format,
-        dimensions: `${metadata.width}x${metadata.height}`,
-        exif: metadata.exif ? 'Present' : 'None'
-      })
 
       // Generate full-size AVIF and thumbnail variants
       const variants = [
@@ -67,16 +54,11 @@ class HeicProcessor {
         }
       ];
 
-      debugService.image.avif(`Creating ${variants.length} AVIF variants: ${variants.map(v => v.name).join(', ')}`)
-
       // Process each variant
       for (const variant of variants) {
-        debugService.image.conversion(`Processing variant: ${variant.name} (${variant.quality}% quality)`)
-        
         let processedBuffer;
         
         if (variant.name === 'full') {
-          debugService.image.avif(`Creating full-size AVIF (${metadata.width}x${metadata.height})`)
           // For full-size, just convert format without resizing, preserve metadata
           processedBuffer = await image
             .rotate() // Auto-rotate based on EXIF orientation data
@@ -84,7 +66,6 @@ class HeicProcessor {
             .heif({ quality: variant.quality, compression: 'av1' })
             .toBuffer();
         } else if (variant.name === 'thumbnail') {
-          debugService.image.avif(`Creating thumbnail AVIF (${variant.width}x${variant.height})`)
           // For thumbnail, resize and convert
           processedBuffer = await image
             .rotate() // Auto-rotate based on EXIF orientation data
@@ -98,13 +79,6 @@ class HeicProcessor {
 
         const filename = `${baseName}_${variant.name}.${variant.format === 'avif' ? 'avif' : variant.format}`;
         const mimetype = `image/${variant.format === 'avif' ? 'avif' : variant.format}`;
-        
-        debugService.image.conversion(`Variant ${variant.name} created`, {
-          filename: filename,
-          size: `${processedBuffer.length} bytes`,
-          mimetype: mimetype,
-          compression: `${Math.round((processedBuffer.length / heicBuffer.length) * 100)}% of original HEIC`
-        })
 
         results[variant.name] = {
           buffer: processedBuffer,
@@ -120,11 +94,6 @@ class HeicProcessor {
           }
         };
       }
-
-      debugService.image.heic(`HEIC processing complete for ${fileName}`, {
-        totalVariantsCreated: Object.keys(results).length,
-        variants: Object.keys(results).join(', ')
-      })
       
       return results;
 
