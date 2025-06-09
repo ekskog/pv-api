@@ -11,6 +11,7 @@ const { authenticateToken, requireRole } = require('./middleware/auth')
 
 // Import services
 const UploadService = require('./services/upload-service')
+const debugService = require('./services/debug-service')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -26,16 +27,16 @@ async function initializeDatabase() {
   
   if (authMode === 'database') {
     try {
-      console.log('🔌 Initializing database connection...')
+      debugService.server.startup('Initializing database connection...')
       await database.initialize()
-      console.log('✅ Database initialized successfully')
+      debugService.server.startup('Database initialized successfully')
     } catch (error) {
-      console.error('❌ Database initialization failed:', error.message)
-      console.log('🔄 Falling back to demo mode')
+      debugService.server.error('Database initialization failed:', error.message)
+      debugService.server.startup('Falling back to demo mode')
       process.env.AUTH_MODE = 'demo'
     }
   } else {
-    console.log('🎭 Running in demo authentication mode')
+    debugService.server.startup('Running in demo authentication mode')
   }
 }
 
@@ -155,12 +156,13 @@ app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) =
 
 // GET /buckets/:bucketName/objects - List objects in a bucket (Public access for album browsing)
 app.get('/buckets/:bucketName/objects', async (req, res) => {
-  console.log('\n🌐 INCOMING REQUEST: GET /buckets/:bucketName/objects')
-  console.log('   📝 Headers:', JSON.stringify(req.headers, null, 2))
-  console.log('   🎯 Params:', req.params)
-  console.log('   ❓ Query:', req.query)
-  console.log('   🌍 Origin:', req.get('Origin') || 'No origin header')
-  console.log('   🔧 User-Agent:', req.get('User-Agent') || 'No user-agent')
+  debugService.server.request('GET /buckets/:bucketName/objects', {
+    headers: req.headers,
+    params: req.params,
+    query: req.query,
+    origin: req.get('Origin') || 'No origin header',
+    userAgent: req.get('User-Agent') || 'No user-agent'
+  })
   
   try {
     const { bucketName } = req.params
@@ -243,25 +245,21 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
       }
     }
     
-    console.log('📤 RESPONSE DATA:')
-    console.log('   ✅ Success:', responseData.success)
-    console.log('   📁 Bucket:', responseData.data.bucket)
-    console.log('   📂 Prefix:', responseData.data.prefix)
-    console.log('   🔄 Recursive:', responseData.data.recursive)
-    console.log('   📊 Total Objects:', responseData.data.totalObjects)
-    console.log('   📊 Total Folders:', responseData.data.totalFolders)
-    if (responseData.data.objects.length > 0) {
-      console.log('   📄 Objects found:')
-      responseData.data.objects.forEach((obj, i) => {
-        console.log(`      ${i + 1}. ${obj.name} (${obj.size} bytes)`)
-      })
-    } else {
-      console.log('   📄 No objects found')
-    }
+    debugService.server.response('GET /buckets/:bucketName/objects', {
+      success: responseData.success,
+      bucket: responseData.data.bucket,
+      prefix: responseData.data.prefix,
+      recursive: responseData.data.recursive,
+      totalObjects: responseData.data.totalObjects,
+      totalFolders: responseData.data.totalFolders,
+      objectsList: responseData.data.objects.length > 0 ? 
+        responseData.data.objects.map((obj, i) => `${i + 1}. ${obj.name} (${obj.size} bytes)`) : 
+        ['No objects found']
+    })
     
     res.json(responseData)
   } catch (error) {
-    console.log('❌ ERROR in /buckets/:bucketName/objects:', error.message)
+    debugService.server.error('Error in GET /buckets/:bucketName/objects:', error.message)
     res.status(500).json({
       success: false,
       error: error.message
@@ -420,58 +418,57 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
     const { folderPath = '' } = req.body
     const files = req.files
 
-    console.log(`\n🚀 UPLOAD REQUEST RECEIVED:`);
-    console.log(`   - Bucket: ${bucketName}`);
-    console.log(`   - Folder: ${folderPath || 'root'}`);
-    console.log(`   - Files: ${files ? files.length : 0}`);
-    console.log(`   - User: ${req.user?.username || 'unknown'}`);
+    debugService.api.objects('Upload request received', {
+      bucket: bucketName,
+      folder: folderPath || 'root',
+      filesCount: files ? files.length : 0,
+      user: req.user?.username || 'unknown'
+    })
 
     if (!files || files.length === 0) {
-      console.log(`❌ UPLOAD FAILED: No files provided`);
+      debugService.api.error('Upload failed: No files provided')
       return res.status(400).json({
         success: false,
         error: 'No files provided'
       })
     }
 
-    console.log(`📋 Files to upload:`);
-    files.forEach((file, index) => {
-      console.log(`   ${index + 1}. ${file.originalname} (${file.size} bytes, ${file.mimetype})`);
-    });
+    debugService.api.objects('Files to upload', files.map((file, index) => 
+      `${index + 1}. ${file.originalname} (${file.size} bytes, ${file.mimetype})`
+    ))
 
     // Check if bucket exists
     const bucketExists = await minioClient.bucketExists(bucketName)
     if (!bucketExists) {
-      console.log(`❌ UPLOAD FAILED: Bucket '${bucketName}' not found`);
+      debugService.api.error(`Upload failed: Bucket '${bucketName}' not found`)
       return res.status(404).json({
         success: false,
         error: 'Bucket not found'
       })
     }
 
-    console.log(`✅ Bucket '${bucketName}' exists - proceeding with upload processing...`);
+    debugService.storage.bucket(`Bucket '${bucketName}' exists - proceeding with upload processing`)
 
     // Use UploadService to handle file processing and upload
-    console.log(`🔄 Calling UploadService.processMultipleFiles()...`);
+    debugService.api.objects('Calling UploadService.processMultipleFiles()')
     const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
 
-    console.log(`\n🎉 UPLOAD PROCESSING COMPLETE:`);
-    console.log(`   - Total files processed: ${files.length}`);
-    console.log(`   - Successful uploads: ${uploadResults.length}`);
-    console.log(`   - Failed uploads: ${errors.length}`);
+    debugService.api.objects('Upload processing complete', {
+      totalFilesProcessed: files.length,
+      successfulUploads: uploadResults.length,
+      failedUploads: errors.length
+    })
     
     if (uploadResults.length > 0) {
-      console.log(`✅ Successfully uploaded files:`);
-      uploadResults.forEach((result, index) => {
-        console.log(`   ${index + 1}. ${result.objectName} (${result.size} bytes, ${result.mimetype})`);
-      });
+      debugService.api.objects('Successfully uploaded files', uploadResults.map((result, index) => 
+        `${index + 1}. ${result.objectName} (${result.size} bytes, ${result.mimetype})`
+      ))
     }
     
     if (errors.length > 0) {
-      console.log(`❌ Failed uploads:`);
-      errors.forEach((error, index) => {
-        console.log(`   ${index + 1}. ${error.filename}: ${error.error}`);
-      });
+      debugService.api.error('Failed uploads', errors.map((error, index) => 
+        `${index + 1}. ${error.filename}: ${error.error}`
+      ))
     }
 
     // Return results
@@ -493,19 +490,21 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
 
     const statusCode = errors.length === 0 ? 201 : (uploadResults.length > 0 ? 207 : 400)
     
-    console.log(`📤 SENDING RESPONSE:`);
-    console.log(`   - Status Code: ${statusCode}`);
-    console.log(`   - Success: ${response.success}`);
-    console.log(`   - Files uploaded: ${uploadResults.length}/${files.length}`);
-    console.log(`🎯 UPLOAD REQUEST COMPLETED\n`);
+    debugService.server.response('Upload response', {
+      statusCode: statusCode,
+      success: response.success,
+      filesUploaded: `${uploadResults.length}/${files.length}`
+    })
+    debugService.api.objects('Upload request completed')
     
     res.status(statusCode).json(response)
 
   } catch (error) {
-    console.log(`💥 UPLOAD ERROR:`);
-    console.log(`   - Error: ${error.message}`);
-    console.log(`   - Stack: ${error.stack}`);
-    console.log(`❌ UPLOAD REQUEST FAILED\n`);
+    debugService.api.error('Upload error occurred', {
+      error: error.message,
+      stack: error.stack
+    })
+    debugService.api.error('Upload request failed')
     
     res.status(500).json({
       success: false,
@@ -583,25 +582,25 @@ async function startServer() {
     // Start HTTP server
     app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || 'demo'
-      console.log(`🚀 PhotoVault API server running on port ${PORT}`)
-      console.log(`📊 Health check: http://localhost:${PORT}/health`)
-      console.log(`🔐 Authentication: http://localhost:${PORT}/auth/status`)
-      console.log(`🗄️  MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
-      console.log(`🎭 Auth Mode: ${authMode}`)
+      debugService.server.startup(`PhotoVault API server running on port ${PORT}`)
+      debugService.server.startup(`Health check: http://localhost:${PORT}/health`)
+      debugService.server.startup(`Authentication: http://localhost:${PORT}/auth/status`)
+      debugService.server.startup(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
+      debugService.server.startup(`Auth Mode: ${authMode}`)
       
       if (authMode === 'demo') {
-        console.log('👤 Demo users: admin/admin123, user/user123')
+        debugService.server.startup('Demo users available: admin/admin123, user/user123')
       }
     })
   } catch (error) {
-    console.error('❌ Failed to start server:', error.message)
+    debugService.server.error('Failed to start server:', error.message)
     process.exit(1)
   }
 }
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down server...')
+  debugService.server.shutdown('Shutting down server...')
   if (process.env.AUTH_MODE === 'database') {
     await database.close()
   }

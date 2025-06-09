@@ -1,6 +1,7 @@
 // Database configuration and connection setup
 const mysql = require('mysql2/promise')
 const bcrypt = require('bcryptjs')
+const debugService = require('../services/debug-service')
 
 class Database {
   constructor() {
@@ -28,8 +29,8 @@ class Database {
         reconnect: true
       }
 
-      console.log('Initializing database connection pool...')
-      console.log(`Connecting to: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`)
+      debugService.database.connection('Initializing database connection pool...')
+      debugService.database.connection(`Connecting to: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`)
 
       this.pool = mysql.createPool(dbConfig)
       
@@ -38,14 +39,14 @@ class Database {
       await connection.ping()
       connection.release()
       
-      console.log('✅ Database connection pool initialized successfully')
+      debugService.database.connection('Database connection pool initialized successfully')
       this.isInitialized = true
 
       // Initialize default users if they don't exist
       await this.initializeDefaultUsers()
 
     } catch (error) {
-      console.error('❌ Failed to initialize database:', error.message)
+      debugService.database.error('Failed to initialize database:', error.message)
       throw error
     }
   }
@@ -62,7 +63,7 @@ class Database {
         await this.createUserIfNotExists(userData)
       }
     } catch (error) {
-      console.warn('Warning: Could not initialize default users:', error.message)
+      debugService.database.error('Warning: Could not initialize default users:', error.message)
     }
   }
 
@@ -86,7 +87,7 @@ class Database {
           [username, email, passwordHash, role]
         )
         
-        console.log(`✅ Created default user: ${username} (${role})`)
+        debugService.database.connection(`Created default user: ${username} (${role})`)
       }
     } finally {
       connection.release()
@@ -189,7 +190,7 @@ class Database {
     if (this.pool) {
       await this.pool.end()
       this.isInitialized = false
-      console.log('Database connection pool closed')
+      debugService.database.connection('Database connection pool closed')
     }
   }
 }

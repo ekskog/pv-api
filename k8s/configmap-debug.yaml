@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: photovault-api-config-debug
+  namespace: webapps
+data:
+  PORT: "3001"
+  NODE_ENV: "development"
+  API_PREFIX: "/api/v1"
+  # Full debug output for development
+  DEBUG: "hbvu:*"
+  # Exclude performance monitoring to reduce noise
+  DEBUG_PATTERN: "!hbvu:performance:*"
+---
+# Alternative debug configurations (apply one at a time)
+
+# Server and API operations only
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: photovault-api-config-debug
+#   namespace: webapps
+# data:
+#   PORT: "3001"
+#   NODE_ENV: "development"
+#   API_PREFIX: "/api/v1"
+#   DEBUG: "hbvu:server:*,hbvu:api:*"
+
+# Upload and processing operations only
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: photovault-api-config-debug
+#   namespace: webapps
+# data:
+#   PORT: "3001"
+#   NODE_ENV: "development"
+#   API_PREFIX: "/api/v1"
+#   DEBUG: "hbvu:upload:*,hbvu:image:*,hbvu:storage:*"
+
+# Authentication operations only
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: photovault-api-config-debug
+#   namespace: webapps
+# data:
+#   PORT: "3001"
+#   NODE_ENV: "development"
+#   API_PREFIX: "/api/v1"
+#   DEBUG: "hbvu:auth:*"

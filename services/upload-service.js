@@ -1,5 +1,6 @@
 // Upload Service - Handles file uploads with HEIC processing
 const HeicProcessor = require('../heic-processor');
+const debugService = require('./debug-service');
 
 class UploadService {
   constructor(minioClient) {
@@ -10,40 +11,53 @@ class UploadService {
   /**
    * Process and upload a single file
    * @param {Object} file - Multer file object
-   * @param {string} bucketName - MinIO bucket name
-   * @param {string} folderPath - Upload folder path
+   * @param {string} bucketName - MinIO bucket  static isImageFile(filename) {
+    const imageExtensions = /\.(jpg|jpeg|png|webp|tiff|tif|bmp)$/i;
+    const isImage = imageExtensions.test(filename);
+    debugService.image.metadata(`Image file check for ${filename}: ${isImage}`)
+    return isImage;
+  }   * @param {string} folderPath - Upload folder path
    * @returns {Array} Upload results
    */
   async processAndUploadFile(file, bucketName, folderPath = '') {
-    console.log(`\n🔄 UPLOAD SERVICE: Starting file processing for ${file.originalname}`);
-    console.log(`📁 Bucket: ${bucketName}, Folder: ${folderPath || 'root'}`);
-    console.log(`📏 File size: ${file.size} bytes, MIME: ${file.mimetype}`);
+    const timer = debugService.createTimer('upload', 'processAndUploadFile');
+    
+    debugService.upload.file(`Starting file processing for ${file.originalname}`, {
+      bucket: bucketName,
+      folder: folderPath || 'root',
+      size: debugService.formatFileSize(file.size),
+      mimetype: file.mimetype
+    });
     
     const uploadResults = [];
     const isHeic = HeicProcessor.isHeicFile(file.originalname);
     const isImage = this.isImageFile(file.originalname);
     
-    console.log(`🔍 File type detection:`);
-    console.log(`   - HEIC file: ${isHeic}`);
-    console.log(`   - Image file: ${isImage}`);
+    debugService.upload.processing(`File type detection`, {
+      filename: file.originalname,
+      isHeic,
+      isImage
+    });
     
     try {
       if (isHeic) {
-        console.log(`🎯 Processing as HEIC file`);
+        debugService.upload.file(`Processing as HEIC file: ${file.originalname}`);
         // Process HEIC files (convert to JPEG, then to AVIF)
         return await this.processHeicFile(file, bucketName, folderPath);
       } else if (isImage) {
-        console.log(`🎯 Processing as regular image file`);
+        debugService.upload.file(`Processing as regular image file: ${file.originalname}`);
         // Process regular image files (convert to AVIF)
         return await this.processImageFile(file, bucketName, folderPath);
       } else {
-        console.log(`🎯 Processing as non-image file`);
+        debugService.upload.file(`Processing as non-image file: ${file.originalname}`);
         // Upload non-image files as-is
         return await this.uploadRegularFile(file, bucketName, folderPath);
       }
     } catch (error) {
-      console.error(`❌ UPLOAD SERVICE ERROR for ${file.originalname}:`, error);
+      debugService.upload.error(`Upload service error for ${file.originalname}`, { error: error.message });
       throw error;
+    } finally {
+      timer.end({ filename: file.originalname });
     }
   }
 
@@ -51,22 +65,26 @@ class UploadService {
    * Process regular image file - convert to AVIF variants
    */
   async processImageFile(file, bucketName, folderPath) {
-    console.log(`\n🖼️  PROCESS IMAGE: Starting AVIF conversion for ${file.originalname}`);
+    const timer = debugService.createTimer('image', 'processImageFile');
+    
+    debugService.image.conversion(`Starting AVIF conversion for ${file.originalname}`);
     
     const uploadResults = [];
     const sharp = require('sharp');
 
     try {
-      console.log(`📊 Extracting metadata...`);
+      debugService.image.metadata(`Extracting metadata for ${file.originalname}`);
       // Extract EXIF metadata before processing
       const image = sharp(file.buffer);
       const metadata = await image.metadata();
       const exifData = metadata.exif || null;
       
-      console.log(`📋 Metadata extracted:`);
-      console.log(`   - Format: ${metadata.format}`);
-      console.log(`   - Dimensions: ${metadata.width}x${metadata.height}`);
-      console.log(`   - EXIF data: ${exifData ? 'Present' : 'None'}`);
+      debugService.image.metadata(`Metadata extracted`, {
+        filename: file.originalname,
+        format: metadata.format,
+        dimensions: `${metadata.width}x${metadata.height}`,
+        hasExif: !!exifData
+      });
 
       // Generate only full-size AVIF variant (per user requirements: no thumbnails, no originals)
       const variants = [
@@ -80,20 +98,25 @@ class UploadService {
       ];
 
       const baseName = require('path').parse(file.originalname).name;
-      console.log(`🏷️  Base filename: ${baseName}`);
+      debugService.image.conversion(`Base filename: ${baseName}`);
 
       // Process each variant
       for (const variant of variants) {
-        console.log(`\n🔧 Processing ${variant.name} variant (${variant.quality}% quality)`);
+        const variantTimer = debugService.createTimer('image', `${variant.name}Variant`);
+        
+        debugService.image.avif(`Processing ${variant.name} variant`, {
+          filename: file.originalname,
+          quality: `${variant.quality}%`
+        });
         
         let processedBuffer;
         
         if (variant.name === 'full') {
-          console.log(`   - Creating full-size AVIF (original dimensions)`);
+          debugService.image.avif(`Creating full-size AVIF (original dimensions)`);
           // For full-size, just convert format while preserving EXIF
           let sharpImage = image.clone();
           if (exifData) {
-            console.log(`   - Preserving EXIF metadata`);
+            debugService.image.metadata(`Preserving EXIF metadata for ${file.originalname}`);
             // Preserve EXIF data
             sharpImage = sharpImage.withMetadata();
           }
@@ -116,22 +139,24 @@ class UploadService {
           }
         };
 
-        console.log(`✅ ${variant.name} variant created:`);
-        console.log(`   - Filename: ${variantData.filename}`);
-        console.log(`   - Size: ${variantData.size} bytes (${Math.round((variantData.size / file.size) * 100)}% of original)`);
-        console.log(`   - MIME type: ${variantData.mimetype}`);
+        debugService.image.avif(`${variant.name} variant created`, {
+          filename: variantData.filename,
+          size: debugService.formatFileSize(variantData.size),
+          compression: `${Math.round((variantData.size / file.size) * 100)}% of original`,
+          mimetype: variantData.mimetype
+        });
 
         // Upload variant
         const variantObjectName = folderPath 
           ? `${folderPath.replace(/\/$/, '')}/${variantData.filename}`
           : variantData.filename;
 
-        console.log(`📤 Uploading ${variant.name} variant to: ${variantObjectName}`);
-        console.log(`🔄 MinIO upload starting...`);
-        console.log(`   - Bucket: ${bucketName}`);
-        console.log(`   - Object Name: ${variantObjectName}`);
-        console.log(`   - Buffer Size: ${variantData.size} bytes`);
-        console.log(`   - Content-Type: ${variantData.mimetype}`);
+        debugService.upload.minio(`Uploading ${variant.name} variant`, {
+          objectName: variantObjectName,
+          bucket: bucketName,
+          size: debugService.formatFileSize(variantData.size),
+          contentType: variantData.mimetype
+        });
 
         const uploadInfo = await this.minioClient.putObject(
           bucketName, 
@@ -149,14 +174,16 @@ class UploadService {
           }
         );
 
-        console.log(`🎉 ✅ MINIO UPLOAD SUCCESSFUL!`);
-        console.log(`   - File: ${variantObjectName}`);
-        console.log(`   - ETag: ${uploadInfo.etag}`);
-        console.log(`   - Version ID: ${uploadInfo.versionId || 'N/A'}`);
-        console.log(`   - Bucket: ${bucketName}`);
-        console.log(`   - Size Stored: ${variantData.size} bytes`);
-        console.log(`   - Format: AVIF (converted from ${metadata.format || 'unknown'})`);
-        console.log(`🌟 FILE NOW AVAILABLE IN MINIO STORAGE! 🌟`);
+        debugService.upload.minio(`MinIO upload successful`, {
+          file: variantObjectName,
+          etag: uploadInfo.etag,
+          versionId: uploadInfo.versionId || 'N/A',
+          bucket: bucketName,
+          sizeStored: debugService.formatFileSize(variantData.size),
+          format: `AVIF (converted from ${metadata.format || 'unknown'})`
+        });
+
+        variantTimer.end({ variant: variant.name });
 
         uploadResults.push({
           originalName: file.originalname,
@@ -171,14 +198,16 @@ class UploadService {
         });
       }
 
-      console.log(`\n🎉 IMAGE PROCESSING COMPLETE for ${file.originalname}:`);
-      console.log(`   - AVIF file created: ${uploadResults.length}`);
+      debugService.image.conversion(`Image processing complete for ${file.originalname}`, {
+        avifFilesCreated: uploadResults.length
+      });
       
+      timer.end({ success: true, variantsCreated: uploadResults.length });
       return uploadResults;
 
     } catch (imageError) {
-      console.error(`❌ IMAGE PROCESSING FAILED for ${file.originalname}:`, imageError);
-      console.log(`🔄 Falling back to regular file upload...`);
+      debugService.image.error(`Image processing failed for ${file.originalname}`, { error: imageError.message });
+      debugService.upload.file(`Falling back to regular file upload for ${file.originalname}`);
       // Fallback: upload original file if processing fails
       return await this.uploadRegularFile(file, bucketName, folderPath);
     }
@@ -188,32 +217,41 @@ class UploadService {
    * Process HEIC file - convert and upload variants
    */
   async processHeicFile(file, bucketName, folderPath) {
-    console.log(`\n📸 PROCESS HEIC: Starting HEIC processing for ${file.originalname}`);
+    const timer = debugService.createTimer('image', 'processHeicFile');
+    
+    debugService.image.heic(`Starting HEIC processing for ${file.originalname}`);
     
     const uploadResults = [];
 
     try {
-      console.log(`🔧 Calling HEIC processor...`);
+      debugService.image.heic(`Calling HEIC processor for ${file.originalname}`);
       // Process HEIC file to create variants (just thumbnail now)
       const variants = await this.heicProcessor.processHeicFile(file.buffer, file.originalname);
       
-      console.log(`📊 HEIC processor returned ${Object.keys(variants).length} variants:`, Object.keys(variants));
+      debugService.image.heic(`HEIC processor returned ${Object.keys(variants).length} variants`, {
+        variants: Object.keys(variants),
+        filename: file.originalname
+      });
       
       // Upload all variants (thumbnail)
       for (const [variantName, variantData] of Object.entries(variants)) {
-        console.log(`\n📤 Uploading HEIC variant: ${variantName}`);
-        console.log(`   - Filename: ${variantData.filename}`);
-        console.log(`   - Size: ${variantData.size} bytes`);
-        console.log(`   - MIME type: ${variantData.mimetype}`);
+        const variantTimer = debugService.createTimer('image', `heicVariant-${variantName}`);
+        
+        debugService.upload.file(`Uploading HEIC variant: ${variantName}`, {
+          filename: variantData.filename,
+          size: debugService.formatFileSize(variantData.size),
+          mimetype: variantData.mimetype
+        });
         
         const variantObjectName = folderPath 
           ? `${folderPath.replace(/\/$/, '')}/${variantData.filename}`
           : variantData.filename;
 
-        console.log(`🔄 MinIO upload starting for HEIC variant...`);
-        console.log(`   - Bucket: ${bucketName}`);
-        console.log(`   - Object Name: ${variantObjectName}`);
-        console.log(`   - Buffer Size: ${variantData.size} bytes`);
+        debugService.upload.minio(`MinIO upload starting for HEIC variant`, {
+          bucket: bucketName,
+          objectName: variantObjectName,
+          bufferSize: debugService.formatFileSize(variantData.size)
+        });
 
         const uploadInfo = await this.minioClient.putObject(
           bucketName, 
@@ -229,13 +267,15 @@ class UploadService {
           }
         );
 
-        console.log(`🎉 ✅ MINIO UPLOAD SUCCESSFUL FOR HEIC VARIANT!`);
-        console.log(`   - File: ${variantObjectName}`);
-        console.log(`   - ETag: ${uploadInfo.etag}`);
-        console.log(`   - Version ID: ${uploadInfo.versionId || 'N/A'}`);
-        console.log(`   - Bucket: ${bucketName}`);
-        console.log(`   - Size Stored: ${variantData.size} bytes`);
-        console.log(`🌟 HEIC VARIANT NOW AVAILABLE IN MINIO STORAGE! 🌟`);
+        debugService.upload.minio(`MinIO upload successful for HEIC variant`, {
+          file: variantObjectName,
+          etag: uploadInfo.etag,
+          versionId: uploadInfo.versionId || 'N/A',
+          bucket: bucketName,
+          sizeStored: debugService.formatFileSize(variantData.size)
+        });
+
+        variantTimer.end({ variant: variantName });
 
         uploadResults.push({
           originalName: file.originalname,
@@ -249,14 +289,16 @@ class UploadService {
         });
       }
 
-      console.log(`\n🎉 HEIC PROCESSING COMPLETE for ${file.originalname}:`);
-      console.log(`   - AVIF variants created: ${uploadResults.filter(r => r.variant).length}`);
+      debugService.image.heic(`HEIC processing complete for ${file.originalname}`, {
+        avifVariantsCreated: uploadResults.filter(r => r.variant).length
+      });
       
+      timer.end({ success: true, variantsCreated: uploadResults.length });
       return uploadResults;
 
     } catch (heicError) {
-      console.error(`❌ HEIC PROCESSING FAILED for ${file.originalname}:`, heicError);
-      console.log(`🔄 Falling back to original HEIC upload...`);
+      debugService.image.error(`HEIC processing failed for ${file.originalname}`, { error: heicError.message });
+      debugService.upload.file(`Falling back to original HEIC upload for ${file.originalname}`);
       // Fallback: upload original HEIC file with error metadata
       return await this.uploadOriginalHeicAsFallback(file, bucketName, folderPath);
     }
@@ -266,19 +308,24 @@ class UploadService {
    * Upload regular (non-HEIC) file
    */
   async uploadRegularFile(file, bucketName, folderPath) {
-    console.log(`\n📄 UPLOAD REGULAR: Uploading non-image file ${file.originalname}`);
+    const timer = debugService.createTimer('upload', 'uploadRegularFile');
+    
+    debugService.upload.file(`Uploading non-image file ${file.originalname}`);
     
     const objectName = folderPath 
       ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
       : file.originalname;
 
-    console.log(`📤 Uploading to: ${objectName}`);
-    console.log(`📏 Size: ${file.size} bytes, MIME: ${file.mimetype}`);
+    debugService.upload.file(`Uploading to: ${objectName}`, {
+      size: debugService.formatFileSize(file.size),
+      mimetype: file.mimetype
+    });
 
-    console.log(`🔄 MinIO upload starting for regular file...`);
-    console.log(`   - Bucket: ${bucketName}`);
-    console.log(`   - Object Name: ${objectName}`);
-    console.log(`   - Buffer Size: ${file.size} bytes`);
+    debugService.upload.minio(`MinIO upload starting for regular file`, {
+      bucket: bucketName,
+      objectName: objectName,
+      bufferSize: debugService.formatFileSize(file.size)
+    });
 
     const uploadInfo = await this.minioClient.putObject(
       bucketName, 
@@ -292,13 +339,15 @@ class UploadService {
       }
     );
 
-    console.log(`🎉 ✅ MINIO UPLOAD SUCCESSFUL FOR REGULAR FILE!`);
-    console.log(`   - File: ${objectName}`);
-    console.log(`   - ETag: ${uploadInfo.etag}`);
-    console.log(`   - Version ID: ${uploadInfo.versionId || 'N/A'}`);
-    console.log(`   - Bucket: ${bucketName}`);
-    console.log(`   - Size Stored: ${file.size} bytes`);
-    console.log(`🌟 REGULAR FILE NOW AVAILABLE IN MINIO STORAGE! 🌟`);
+    debugService.upload.minio(`MinIO upload successful for regular file`, {
+      file: objectName,
+      etag: uploadInfo.etag,
+      versionId: uploadInfo.versionId || 'N/A',
+      bucket: bucketName,
+      sizeStored: debugService.formatFileSize(file.size)
+    });
+
+    timer.end({ filename: file.originalname });
 
     return [{
       originalName: file.originalname,
@@ -314,18 +363,21 @@ class UploadService {
    * Fallback: Upload original HEIC when processing fails
    */
   async uploadOriginalHeicAsFallback(file, bucketName, folderPath) {
-    console.log(`\n⚠️  HEIC FALLBACK: Uploading original HEIC due to processing failure`);
+    const timer = debugService.createTimer('upload', 'uploadOriginalHeicAsFallback');
+    
+    debugService.image.heic(`HEIC fallback: Uploading original HEIC due to processing failure`);
     
     const objectName = folderPath 
       ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
       : file.originalname;
 
-    console.log(`📤 Fallback upload to: ${objectName}`);
+    debugService.upload.file(`Fallback upload to: ${objectName}`);
 
-    console.log(`🔄 MinIO fallback upload starting for HEIC...`);
-    console.log(`   - Bucket: ${bucketName}`);
-    console.log(`   - Object Name: ${objectName}`);
-    console.log(`   - Buffer Size: ${file.size} bytes`);
+    debugService.upload.minio(`MinIO fallback upload starting for HEIC`, {
+      bucket: bucketName,
+      objectName: objectName,
+      bufferSize: debugService.formatFileSize(file.size)
+    });
 
     const uploadInfo = await this.minioClient.putObject(
       bucketName, 
@@ -340,14 +392,16 @@ class UploadService {
       }
     );
 
-    console.log(`🎉 ✅ MINIO FALLBACK UPLOAD SUCCESSFUL!`);
-    console.log(`   - File: ${objectName}`);
-    console.log(`   - ETag: ${uploadInfo.etag}`);
-    console.log(`   - Version ID: ${uploadInfo.versionId || 'N/A'}`);
-    console.log(`   - Bucket: ${bucketName}`);
-    console.log(`   - Size Stored: ${file.size} bytes`);
-    console.log(`   - Note: Original HEIC (processing failed)`);
-    console.log(`🌟 HEIC FALLBACK FILE NOW AVAILABLE IN MINIO STORAGE! 🌟`);
+    debugService.upload.minio(`MinIO fallback upload successful`, {
+      file: objectName,
+      etag: uploadInfo.etag,
+      versionId: uploadInfo.versionId || 'N/A',
+      bucket: bucketName,
+      sizeStored: debugService.formatFileSize(file.size),
+      note: 'Original HEIC (processing failed)'
+    });
+
+    timer.end({ filename: file.originalname });
 
     return [{
       originalName: file.originalname,
@@ -390,7 +444,7 @@ class UploadService {
   isImageFile(filename) {
     const imageExtensions = /\.(jpg|jpeg|png|webp|tiff|tif|bmp)$/i;
     const isImage = imageExtensions.test(filename);
-    console.log(`🔍 Image file check for ${filename}: ${isImage} (pattern: ${imageExtensions})`);
+    debugService.image.metadata(`Image file check for ${filename}: ${isImage}`)
     return isImage;
   }
 }
