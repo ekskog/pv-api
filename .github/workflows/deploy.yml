@@ -8,7 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ghcr.io/ekskog/photovault-api
 
 jobs:
   test:
@@ -53,9 +53,7 @@ jobs:
       with:
         context: .
         push: true
-        tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        tags: ${{ env.IMAGE_NAME }}:latest
 
     - name: Setup kubectl
       uses: azure/setup-kubectl@v3
@@ -73,13 +71,12 @@ jobs:
         # Apply all Kubernetes manifests
         kubectl apply -f k8s/
         
-        # Update image with commit-specific tag to force pull
-        kubectl set image deployment/photovault-api photovault-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} -n webapps
+        # Restart deployment to pull latest image
+        kubectl rollout restart deployment/photovault-api -n webapps
         
         # Wait for rollout to complete
         kubectl rollout status deployment/photovault-api -n webapps --timeout=300s
 
     - name: Verify deployment
       run: |
-        kubectl rollout status deployment/photovault-api -n webapps --timeout=300s
         kubectl get pods -n webapps -l app=photovault-api
