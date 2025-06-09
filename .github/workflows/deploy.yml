@@ -53,7 +53,9 @@ jobs:
       with:
         context: .
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
     - name: Setup kubectl
       uses: azure/setup-kubectl@v3
@@ -71,8 +73,11 @@ jobs:
         # Apply all Kubernetes manifests
         kubectl apply -f k8s/
         
-        # Force restart deployment to pull latest image
-        kubectl rollout restart deployment/photovault-api -n webapps
+        # Update image with commit-specific tag to force pull
+        kubectl set image deployment/photovault-api photovault-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} -n webapps
+        
+        # Wait for rollout to complete
+        kubectl rollout status deployment/photovault-api -n webapps --timeout=300s
 
     - name: Verify deployment
       run: |
