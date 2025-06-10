@@ -539,7 +539,7 @@ async function startServer() {
       console.log(`Health check: http://localhost:${PORT}/health`)
       console.log(`Authentication: http://localhost:${PORT}/auth/status`)
       console.log(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
-      console.logp(`Auth Mode: ${authMode}`)
+      console.log(`Auth Mode: ${authMode}`)
       
       if (authMode === 'demo') {
         console.log('Demo users available: admin/admin123, user/user123')

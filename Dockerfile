@@ -1,5 +1,5 @@
-# Use Node.js 18 Alpine for smaller image size
-FROM node:18-alpine
+# Multi-stage build for smaller final image
+FROM node:18-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -7,8 +7,26 @@ WORKDIR /app
 # Copy package files first for better caching
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including dev)
+RUN npm ci
+
+# Copy source code
+COPY src/ ./src/
+
+# Production stage
+FROM node:18-alpine AS production
+
+# Install only runtime dependencies needed for sharp and heic processing
+RUN apk add --no-cache \
+    vips-dev \
+    libc6-compat
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files and install only production dependencies
+COPY package*.json ./
+RUN npm ci --only=production && npm cache clean --force
 
 # Copy source code
 COPY src/ ./src/
@@ -17,8 +35,9 @@ COPY src/ ./src/
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S photovault -u 1001
 
-# Change ownership of app directory
+# Change ownership of app directory more efficiently
 RUN chown -R photovault:nodejs /app
+
 USER photovault
 
 # Expose port
