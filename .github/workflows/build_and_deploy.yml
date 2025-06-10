@@ -1,0 +1,49 @@
+name: Build and Deploy Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile'
+      - '.dockerignore'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    env:
+      IMAGE_NAME: ghcr.io/ekskog/photovault-api
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set Environment Variables
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ env.IMAGE_NAME }}:$SHORT_SHA" >> $GITHUB_ENV
+
+      - name: Login to GitHub Container Registry
+        run: docker login ghcr.io -u $GITHUB_ACTOR --password ${{ secrets.EK_GITHUB_PAT }}
+
+      - name: Build and Push Docker Image
+        run: |
+          echo "Building and pushing image: $IMAGE_TAG"
+          docker buildx build --platform linux/amd64 -t $IMAGE_TAG --push .
+      
+      - name: Set Up KUBECONFIG
+        run: |
+          echo "${{ secrets.KUBECONFIG_FILE_CONTENT }}" > kubeconfig.yaml
+          export KUBECONFIG=$PWD/kubeconfig.yaml
+          echo "KUBECONFIG set to $KUBECONFIG"
+                    
+      - name: Deploy to Kubernetes
+        run: |
+          echo "Deploying image: $IMAGE_TAG"
+          kubectl set image deployment/photovault-api photovault-api=$IMAGE_TAG --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
+          kubectl rollout status deployment/photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml --timeout=300s

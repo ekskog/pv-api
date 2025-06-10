@@ -26,12 +26,9 @@ async function initializeDatabase() {
   
   if (authMode === 'database') {
     try {
-      console.log('Initializing database connection...')
       await database.initialize()
-      console.log('Database initialized successfully')
     } catch (error) {
       console.error('Database initialization failed:', error.message)
-      console.log('Falling back to demo mode')
       process.env.AUTH_MODE = 'demo'
     }
   } else {
@@ -155,6 +152,14 @@ app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) =
 
 // GET /buckets/:bucketName/objects - List objects in a bucket (Public access for album browsing)
 app.get('/buckets/:bucketName/objects', async (req, res) => {
+  ////debugService.server.request('GET /buckets/:bucketName/objects', {
+    headers: req.headers,
+    params: req.params,
+    query: req.query,
+    origin: req.get('Origin') || 'No origin header',
+    userAgent: req.get('User-Agent') || 'No user-agent'
+  })
+  
   try {
     const { bucketName } = req.params
     const { prefix = '', recursive = 'false' } = req.query
@@ -236,9 +241,21 @@ app.get('/buckets/:bucketName/objects', async (req, res) => {
       }
     }
     
+    ////debugService.server.response('GET /buckets/:bucketName/objects', {
+      success: responseData.success,
+      bucket: responseData.data.bucket,
+      prefix: responseData.data.prefix,
+      recursive: responseData.data.recursive,
+      totalObjects: responseData.data.totalObjects,
+      totalFolders: responseData.data.totalFolders,
+      objectsList: responseData.data.objects.length > 0 ? 
+        responseData.data.objects.map((obj, i) => `${i + 1}. ${obj.name} (${obj.size} bytes)`) : 
+        ['No objects found']
+    })
+    
     res.json(responseData)
   } catch (error) {
-    console.error('Error in GET /buckets/:bucketName/objects:', error.message)
+    ////debugService.server.error('Error in GET /buckets/:bucketName/objects:', error.message)
     res.status(500).json({
       success: false,
       error: error.message
@@ -337,25 +354,59 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
     const { folderPath = '' } = req.body
     const files = req.files
 
+    ////debugService.api.objects('Upload request received', {
+      bucket: bucketName,
+      folder: folderPath || 'root',
+      filesCount: files ? files.length : 0,
+      user: req.user?.username || 'unknown'
+    })
+
     if (!files || files.length === 0) {
+      ////debugService.api.error('Upload failed: No files provided')
       return res.status(400).json({
         success: false,
         error: 'No files provided'
       })
     }
 
+    ////debugService.api.objects('Files to upload', files.map((file, index) => 
+      `${index + 1}. ${file.originalname} (${file.size} bytes, ${file.mimetype})`
+    ))
+
     // Check if bucket exists
     const bucketExists = await minioClient.bucketExists(bucketName)
     if (!bucketExists) {
+      ////debugService.api.error(`Upload failed: Bucket '${bucketName}' not found`)
       return res.status(404).json({
         success: false,
         error: 'Bucket not found'
       })
     }
 
+    ////debugService.storage.bucket(`Bucket '${bucketName}' exists - proceeding with upload processing`)
+
     // Use UploadService to handle file processing and upload
+    ////debugService.api.objects('Calling UploadService.processMultipleFiles()')
     const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
+
+    ////debugService.api.objects('Upload processing complete', {
+      totalFilesProcessed: files.length,
+      successfulUploads: uploadResults.length,
+      failedUploads: errors.length
+    })
     
+    if (uploadResults.length > 0) {
+      ////debugService.api.objects('Successfully uploaded files', uploadResults.map((result, index) => 
+        `${index + 1}. ${result.objectName} (${result.size} bytes, ${result.mimetype})`
+      ))
+    }
+    
+    if (errors.length > 0) {
+      ////debugService.api.error('Failed uploads', errors.map((error, index) => 
+        `${index + 1}. ${error.filename}: ${error.error}`
+      ))
+    }
+
     // Return results
     const response = {
       success: errors.length === 0,
@@ -375,10 +426,21 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
 
     const statusCode = errors.length === 0 ? 201 : (uploadResults.length > 0 ? 207 : 400)
     
+    ////debugService.server.response('Upload response', {
+      statusCode: statusCode,
+      success: response.success,
+      filesUploaded: `${uploadResults.length}/${files.length}`
+    })
+    ////debugService.api.objects('Upload request completed')
+    
     res.status(statusCode).json(response)
 
   } catch (error) {
-    console.error('Upload error occurred:', error.message)
+    ////debugService.api.error('Upload error occurred', {
+      error: error.message,
+      stack: error.stack
+    })
+    ////debugService.api.error('Upload request failed')
     
     res.status(500).json({
       success: false,
@@ -456,25 +518,25 @@ async function startServer() {
     // Start HTTP server
     app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || 'demo'
-      console.log(`PhotoVault API server running on port ${PORT}`)
-      console.log(`Health check: http://localhost:${PORT}/health`)
-      console.log(`Authentication: http://localhost:${PORT}/auth/status`)
-      console.log(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
-      console.log(`Auth Mode: ${authMode}`)
+      ////debugService.server.startup(`PhotoVault API server running on port ${PORT}`)
+      ////debugService.server.startup(`Health check: http://localhost:${PORT}/health`)
+      ////debugService.server.startup(`Authentication: http://localhost:${PORT}/auth/status`)
+      ////debugService.server.startup(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
+      ////debugService.server.startup(`Auth Mode: ${authMode}`)
       
       if (authMode === 'demo') {
-        console.log('Demo users available: admin/admin123, user/user123')
+        ////debugService.server.startup('Demo users available: admin/admin123, user/user123')
       }
     })
   } catch (error) {
-    console.error('Failed to start server:', error.message)
+    ////debugService.server.error('Failed to start server:', error.message)
     process.exit(1)
   }
 }
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('Shutting down server...')
+  ////debugService.server.shutdown('Shutting down server...')
   if (process.env.AUTH_MODE === 'database') {
     await database.close()
   }
