@@ -10,6 +10,7 @@ on:
       - 'package-lock.json'
       - 'Dockerfile'
       - '.dockerignore'
+      - '.github/workflows/**'
 
 jobs:
   build-and-deploy:
