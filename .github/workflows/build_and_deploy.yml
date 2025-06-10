@@ -42,7 +42,7 @@ jobs:
       
       - name: Set Up KUBECONFIG
         run: |
-          echo "${{ secrets.KUBECONFIG_FILE_CONTENT }}" > kubeconfig.yaml
+          echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
           export KUBECONFIG=$PWD/kubeconfig.yaml
           echo "KUBECONFIG set to $KUBECONFIG"
                     
