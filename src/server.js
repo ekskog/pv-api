@@ -534,6 +534,7 @@ async function startServer() {
     // Start HTTP server
     app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || 'demo'
+      console.log(`\nStarting PhotoVault ${new Date()}...`)
       console.log(`PhotoVault API server running on port ${PORT}`)
       console.log(`Health check: http://localhost:${PORT}/health`)
       console.log(`Authentication: http://localhost:${PORT}/auth/status`)
