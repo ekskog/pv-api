@@ -50,4 +50,24 @@ jobs:
         run: |
           echo "Deploying image: $IMAGE_TAG"
           kubectl set image deployment/photovault-api photovault-api=$IMAGE_TAG --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
-          kubectl rollout status deployment/photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml --timeout=300s
+          
+          # Add debugging information
+          echo "Checking deployment status..."
+          kubectl get deployment photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
+          
+          echo "Checking pod status..."
+          kubectl get pods -l app=photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
+          
+          echo "Checking events..."
+          kubectl get events --namespace=webapps --sort-by='.lastTimestamp' --kubeconfig=$PWD/kubeconfig.yaml | tail -10
+          
+          # Wait for rollout with detailed output
+          kubectl rollout status deployment/photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml --timeout=600s
+
+      - name: Debug on Failure
+        if: failure()
+        run: |
+          echo "Deployment failed. Gathering debug information..."
+          kubectl describe deployment photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
+          kubectl describe pods -l app=photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
+          kubectl logs -l app=photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml --tail=50
