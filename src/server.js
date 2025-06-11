@@ -353,71 +353,67 @@ app.post('/buckets/:bucketName/folders', authenticateToken, requireRole('admin')
 
 // POST /buckets/:bucketName/upload - Upload file(s) to a bucket with optional folder path
 app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files'), async (req, res) => {
+  const startTime = Date.now()
+  
   try {
     const { bucketName } = req.params
     const { folderPath = '' } = req.body
     const files = req.files
 
-    /*
-    debugService.api.objects('Upload request received', {
+    console.log(`[UPLOAD] Upload request received:`, {
       bucket: bucketName,
       folder: folderPath || 'root',
       filesCount: files ? files.length : 0,
-      user: req.user?.username || 'unknown'
+      user: req.user?.username || 'unknown',
+      timestamp: new Date().toISOString()
     })
-      */
 
     if (!files || files.length === 0) {
-      ////debugService.api.error('Upload failed: No files provided')
+      console.error('[UPLOAD] Upload failed: No files provided')
       return res.status(400).json({
         success: false,
         error: 'No files provided'
       })
     }
-    /*
-    debugService.api.objects('Files to upload', files.map((file, index) => 
-      `${index + 1}. ${file.originalname} (${file.size} bytes, ${file.mimetype})`
+
+    console.log('[UPLOAD] Files to upload:', files.map((file, index) => 
+      `${index + 1}. ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`
     ))
-    */
 
     // Check if bucket exists
+    console.log(`[UPLOAD] Checking if bucket '${bucketName}' exists...`)
     const bucketExists = await minioClient.bucketExists(bucketName)
     if (!bucketExists) {
-      // debugService.api.error(`Upload failed: Bucket '${bucketName}' not found`)
+      console.error(`[UPLOAD] Upload failed: Bucket '${bucketName}' not found`)
       return res.status(404).json({
         success: false,
         error: 'Bucket not found'
       })
     }
 
-    ////debugService.storage.bucket(`Bucket '${bucketName}' exists - proceeding with upload processing`)
+    console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with upload processing`)
 
     // Use UploadService to handle file processing and upload
-    ////debugService.api.objects('Calling UploadService.processMultipleFiles()')
+    console.log('[UPLOAD] Calling UploadService.processMultipleFiles()...')
     const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
 
-    /*
-    debugService.api.objects('Upload processing complete', {
+    const processingTime = Date.now() - startTime
+    console.log(`[UPLOAD] Upload processing complete in ${processingTime}ms:`, {
       totalFilesProcessed: files.length,
       successfulUploads: uploadResults.length,
       failedUploads: errors.length
     })
-    */
     
     if (uploadResults.length > 0) {
-      /*
-      debugService.api.objects('Successfully uploaded files', uploadResults.map((result, index) => 
-        `${index + 1}. ${result.objectName} (${result.size} bytes, ${result.mimetype})`
+      console.log('[UPLOAD] Successfully uploaded files:', uploadResults.map((result, index) => 
+        `${index + 1}. ${result.objectName} (${(result.size / 1024 / 1024).toFixed(2)}MB, ${result.mimetype})`
       ))
-      */
     }
     
     if (errors.length > 0) {
-      /*
-      debugService.api.error('Failed uploads', errors.map((error, index) => 
+      console.error('[UPLOAD] Failed uploads:', errors.map((error, index) => 
         `${index + 1}. ${error.filename}: ${error.error}`
       ))
-      */
     }
 
     // Return results
@@ -439,24 +435,23 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
 
     const statusCode = errors.length === 0 ? 201 : (uploadResults.length > 0 ? 207 : 400)
     
-    /*
-    debugService.server.response('Upload response', {
+    console.log(`[UPLOAD] Upload response:`, {
       statusCode: statusCode,
       success: response.success,
-      filesUploaded: `${uploadResults.length}/${files.length}`
+      filesUploaded: `${uploadResults.length}/${files.length}`,
+      totalTime: `${Date.now() - startTime}ms`
     })
-    debugService.api.objects('Upload request completed')
-    */
+    console.log('[UPLOAD] Upload request completed')
+    
     res.status(statusCode).json(response)
 
   } catch (error) {
-    /*
-    debugService.api.error('Upload error occurred', {
+    const errorTime = Date.now() - startTime
+    console.error(`[UPLOAD] Upload error occurred after ${errorTime}ms:`, {
       error: error.message,
       stack: error.stack
     })
-    debugService.api.error('Upload request failed')
-    */
+    console.error('[UPLOAD] Upload request failed')
     
     res.status(500).json({
       success: false,

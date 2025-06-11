@@ -17,7 +17,10 @@ class HeicProcessor {
    * @returns {Object} Processed variants
    */
   async processHeicFile(heicBuffer, fileName) {
+    console.log(`[HEIC_PROCESSOR] Starting HEIC processing for file: ${fileName} (${(heicBuffer.length / 1024 / 1024).toFixed(2)}MB)`)
+    
     if (!this.heicSupported) {
+      console.error(`[HEIC_PROCESSOR] HEIC processing not supported for: ${fileName}`)
       throw new Error('HEIC processing not supported - please install libheif');
     }
 
@@ -26,15 +29,19 @@ class HeicProcessor {
 
     try {
       // First convert HEIC to JPEG using heic-convert
+      console.log(`[HEIC_PROCESSOR] Converting HEIC to JPEG intermediate format: ${fileName}`)
       const jpegBuffer = await heicConvert({
         buffer: heicBuffer,
         format: 'JPEG',
         quality: 1 // Use maximum quality for initial conversion
       });
+      console.log(`[HEIC_PROCESSOR] HEIC to JPEG conversion completed: ${(jpegBuffer.length / 1024 / 1024).toFixed(2)}MB`)
 
       // Then use Sharp to create variants from the JPEG
+      console.log(`[HEIC_PROCESSOR] Extracting metadata from converted JPEG`)
       const image = sharp(jpegBuffer);
       const metadata = await image.metadata();
+      console.log(`[HEIC_PROCESSOR] Metadata extracted - Dimensions: ${metadata.width}x${metadata.height}, Format: ${metadata.format}`)
 
       // Generate full-size AVIF and thumbnail variants
       const variants = [
@@ -56,6 +63,7 @@ class HeicProcessor {
 
       // Process each variant
       for (const variant of variants) {
+        console.log(`[HEIC_PROCESSOR] Creating ${variant.name} variant`)
         let processedBuffer;
         
         if (variant.name === 'full') {
@@ -79,6 +87,7 @@ class HeicProcessor {
 
         const filename = `${baseName}_${variant.name}.${variant.format === 'avif' ? 'avif' : variant.format}`;
         const mimetype = `image/${variant.format === 'avif' ? 'avif' : variant.format}`;
+        console.log(`[HEIC_PROCESSOR] Generated ${variant.name}: ${filename} (${(processedBuffer.length / 1024).toFixed(2)}KB)`)
 
         results[variant.name] = {
           buffer: processedBuffer,
@@ -95,9 +104,11 @@ class HeicProcessor {
         };
       }
       
+      console.log(`[HEIC_PROCESSOR] HEIC processing completed: ${Object.keys(results).length} variants created`)
       return results;
 
     } catch (error) {
+      console.error(`[HEIC_PROCESSOR] HEIC processing failed:`, error.message)
       throw new Error(`HEIC processing failed: ${error.message}`);
     }
   }
