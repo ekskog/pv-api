@@ -53,20 +53,29 @@ jobs:
           echo "Building and pushing image: $IMAGE_TAG"
           docker buildx build --platform linux/amd64 -t $IMAGE_TAG --push .
       
-      - name: Skip Build and Deployment (No Changes)
-        if: steps.changes.outputs.source != 'true'
+      - name: Find last source code commit for manifest-only changes
+        if: steps.changes.outputs.source != 'true' && steps.changes.outputs.manifests == 'true'
         run: |
-          echo "No source code changes detected. Skipping build and deployment."
+          # Find the last commit that changed source code
+          LAST_SOURCE_SHA=$(git log --oneline --pretty=format:"%H" -- src/ package.json package-lock.json Dockerfile .dockerignore | head -1 | cut -c1-7)
+          IMAGE_TAG=${{ env.IMAGE_NAME }}:$LAST_SOURCE_SHA
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "Using last source code image: $IMAGE_TAG"
+      
+      - name: Skip Build and Deployment (No Changes)
+        if: steps.changes.outputs.source != 'true' && steps.changes.outputs.manifests != 'true'
+        run: |
+          echo "No source code or manifest changes detected. Skipping build and deployment."
       
       - name: Set Up KUBECONFIG
-        if: steps.changes.outputs.source == 'true'
+        if: steps.changes.outputs.source == 'true' || steps.changes.outputs.manifests == 'true'
         run: |
           echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
           export KUBECONFIG=$PWD/kubeconfig.yaml
           echo "KUBECONFIG set to $KUBECONFIG"
                     
       - name: Deploy to Kubernetes
-        if: steps.changes.outputs.source == 'true'
+        if: steps.changes.outputs.source == 'true' || steps.changes.outputs.manifests == 'true'
         run: |
           echo "Deploying image: $IMAGE_TAG"
           
@@ -87,7 +96,7 @@ jobs:
           kubectl rollout status deployment/photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml --timeout=900s
 
       - name: Debug on Failure
-        if: failure() && steps.changes.outputs.source == 'true'
+        if: failure() && (steps.changes.outputs.source == 'true' || steps.changes.outputs.manifests == 'true')
         run: |
           echo "Deployment failed. Gathering debug information..."
           kubectl describe deployment photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml

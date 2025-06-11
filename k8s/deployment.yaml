@@ -5,7 +5,7 @@ metadata:
   namespace: webapps
   labels:
     app: photovault-api
-  # Updated to disable all health probes for crash debugging
+  # Updated to disable all health probes for crash debugging - deploy now
 spec:
   replicas: 1
   selector:
