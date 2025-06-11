@@ -176,28 +176,71 @@ class UploadService {
               if (variant.name === 'full') {
                 // For full-size, just convert format while preserving EXIF
                 console.log(`[IMAGE_PROCESS] Converting full-size image to AVIF with quality ${variant.quality}`)
+                console.log(`[IMAGE_PROCESS] Input: ${file.originalname} (${file.mimetype}) - ${(file.size / 1024 / 1024).toFixed(2)}MB`)
+                console.log(`[IMAGE_PROCESS] Sharp metadata: ${JSON.stringify({ 
+                  format: metadata.format, 
+                  width: metadata.width, 
+                  height: metadata.height,
+                  channels: metadata.channels,
+                  density: metadata.density 
+                })}`)
+                
                 let sharpImage = image.clone()
                   .rotate(); // Auto-rotate based on EXIF orientation data
+                
+                console.log(`[IMAGE_PROCESS] Created Sharp pipeline for full-size variant`)
+                
                 if (exifData) {
                   // Preserve EXIF data
                   console.log(`[IMAGE_PROCESS] Preserving EXIF data for full-size variant`)
                   sharpImage = sharpImage.withMetadata();
+                } else {
+                  console.log(`[IMAGE_PROCESS] No EXIF data to preserve`)
                 }
+                
+                console.log(`[IMAGE_PROCESS] Starting HEIF/AVIF conversion with AV1 compression...`)
+                const conversionStart = Date.now()
+                const memBefore = process.memoryUsage()
+                console.log(`[IMAGE_PROCESS] Memory before conversion: ${(memBefore.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memBefore.rss / 1024 / 1024).toFixed(2)}MB RSS`)
+                
                 const buffer = await sharpImage
                   .heif({ quality: variant.quality, compression: 'av1' })
                   .toBuffer();
+                
+                const conversionTime = Date.now() - conversionStart
+                const memAfter = process.memoryUsage()
+                console.log(`[IMAGE_PROCESS] HEIF/AVIF conversion completed in ${conversionTime}ms`)
+                console.log(`[IMAGE_PROCESS] Memory after conversion: ${(memAfter.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfter.rss / 1024 / 1024).toFixed(2)}MB RSS`)
+                console.log(`[IMAGE_PROCESS] Output buffer size: ${(buffer.length / 1024).toFixed(2)}KB`)
+                
                 resolve(buffer);
               } else if (variant.name === 'thumbnail') {
                 // For thumbnail, resize and convert
                 console.log(`[IMAGE_PROCESS] Creating thumbnail: ${variant.width}x${variant.height}`)
-                const buffer = await image.clone()
+                console.log(`[IMAGE_PROCESS] Input: ${file.originalname} (${file.mimetype}) - ${(file.size / 1024 / 1024).toFixed(2)}MB`)
+                console.log(`[IMAGE_PROCESS] Starting resize operation...`)
+                
+                const resizeStart = Date.now()
+                const resizedImage = image.clone()
                   .rotate() // Auto-rotate based on EXIF orientation data
                   .resize(variant.width, variant.height, { 
                     fit: 'cover', 
                     position: 'center' 
                   })
+                
+                const resizeTime = Date.now() - resizeStart
+                console.log(`[IMAGE_PROCESS] Resize completed in ${resizeTime}ms`)
+                console.log(`[IMAGE_PROCESS] Starting thumbnail HEIF/AVIF conversion...`)
+                
+                const thumbConversionStart = Date.now()
+                const buffer = await resizedImage
                   .heif({ quality: variant.quality, compression: 'av1' })
                   .toBuffer();
+                
+                const thumbConversionTime = Date.now() - thumbConversionStart
+                console.log(`[IMAGE_PROCESS] Thumbnail HEIF/AVIF conversion completed in ${thumbConversionTime}ms`)
+                console.log(`[IMAGE_PROCESS] Thumbnail output buffer size: ${(buffer.length / 1024).toFixed(2)}KB`)
+                
                 resolve(buffer);
               }
             } catch (conversionError) {
