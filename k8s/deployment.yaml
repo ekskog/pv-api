@@ -40,29 +40,30 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 12
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3001
-          initialDelaySeconds: 60
-          periodSeconds: 600  # 10 minutes
-          timeoutSeconds: 30
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3001
-          initialDelaySeconds: 30
-          periodSeconds: 600  # 10 minutes
-          timeoutSeconds: 30
-          failureThreshold: 3
+        # Probes disabled to prevent restart on crash for debugging
+        # livenessProbe:
+        #   httpGet:
+        #     path: /health
+        #     port: 3001
+        #   initialDelaySeconds: 60
+        #   periodSeconds: 600  # 10 minutes
+        #   timeoutSeconds: 30
+        #   failureThreshold: 3
+        # readinessProbe:
+        #   httpGet:
+        #     path: /health
+        #     port: 3001
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 600  # 10 minutes
+        #   timeoutSeconds: 30
+        #   failureThreshold: 3
         resources:
           requests:
             memory: "128Mi"
             cpu: "100m"
           limits:
-            memory: "256Mi"
-            cpu: "500m"
+            memory: "512Mi"  # Increased for debugging
+            cpu: "1000m"     # Increased for debugging
       volumes:
       - name: log-storage
         emptyDir: {}  # Ephemeral storage for logs in Kubernetes
