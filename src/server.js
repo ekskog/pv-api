@@ -153,7 +153,7 @@ app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) =
 // GET /buckets/:bucketName/objects - List objects in a bucket (Public access for album browsing)
 app.get('/buckets/:bucketName/objects', async (req, res) => {
   
-console.log("GET /buckets/:bucketName/objects called with params:", req.params, "and query:", req.query)
+console.log(">> GET /buckets/:bucketName/objects called with params:", req.params, "and query:", req.query)
   
   try {
     const { bucketName } = req.params

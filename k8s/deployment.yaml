@@ -34,7 +34,7 @@ spec:
         - name: log-storage
           mountPath: /app/logs
         # All probes completely disabled to prevent restart on crash
-        # even though copilot can't get this to work
+        # even though copilot can't get this to work at all
         # Updated to trigger manifest redeployment
         resources:
           requests:
