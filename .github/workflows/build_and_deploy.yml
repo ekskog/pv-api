@@ -4,14 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.github/workflows/**'
-      - 'k8s/**'
 
 jobs:
   build-and-deploy:
