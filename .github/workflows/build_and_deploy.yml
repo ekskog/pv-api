@@ -69,7 +69,9 @@ jobs:
       - name: Deploy to Kubernetes
         run: |
           echo "Deploying image: $IMAGE_TAG"
-          kubectl set image deployment/photovault-api photovault-api=$IMAGE_TAG --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
+          
+          # Update the deployment manifest with the correct image tag and apply it
+          sed "s|ghcr.io/ekskog/photovault-api:latest|$IMAGE_TAG|g" k8s/deployment.yaml | kubectl apply -f - --kubeconfig=$PWD/kubeconfig.yaml
           
           # Add debugging information
           echo "Checking deployment status..."
