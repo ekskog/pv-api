@@ -25,7 +25,9 @@ class UploadService {
    * @returns {Array} Upload results
    */
   async processAndUploadFile(file, bucketName, folderPath = '') {
+    const memBefore = process.memoryUsage();
     console.log(`[UPLOAD] Processing file: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`)
+    console.log(`[UPLOAD] Memory before processing: ${(memBefore.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memBefore.rss / 1024 / 1024).toFixed(2)}MB RSS`)
     
     const uploadResults = [];
     const isHeic = HeicProcessor.isHeicFile(file.originalname);
@@ -34,64 +36,82 @@ class UploadService {
     console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}`)
     
     try {
-      if (isHeic) {
-        console.log(`[UPLOAD] Processing HEIC file: ${file.originalname}`)
-        return await this.processHeicFile(file, bucketName, folderPath);
-      } else if (isImage) {
-        console.log(`[UPLOAD] Processing regular image file: ${file.originalname}`)
-        return await this.processImageFile(file, bucketName, folderPath);
-      } else {
-        console.log(`[UPLOAD] Uploading non-image file as-is: ${file.originalname}`)
-        return await this.uploadRegularFile(file, bucketName, folderPath);
-      }
+      // Add overall timeout for file processing
+      const processingPromise = (async () => {
+        if (isHeic) {
+          console.log(`[UPLOAD] Processing HEIC file: ${file.originalname}`)
+          return await this.processHeicFile(file, bucketName, folderPath);
+        } else if (isImage) {
+          console.log(`[UPLOAD] Processing regular image file: ${file.originalname}`)
+          return await this.processImageFile(file, bucketName, folderPath);
+        } else {
+          console.log(`[UPLOAD] Uploading non-image file as-is: ${file.originalname}`)
+          return await this.uploadRegularFile(file, bucketName, folderPath);
+        }
+      })();
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('File processing timeout (5 minutes)')), 300000) // 5 minutes total
+      );
+
+      return await Promise.race([processingPromise, timeoutPromise]);
     } catch (error) {
       console.error(`[UPLOAD] Error processing file ${file.originalname}:`, error.message)
+      
+      // If it's a timeout or processing error, try fallback upload
+      if (error.message.includes('timeout') || error.message.includes('processing')) {
+        console.log(`[UPLOAD] Attempting fallback upload for: ${file.originalname}`)
+        try {
+          return await this.uploadRegularFile(file, bucketName, folderPath);
+        } catch (fallbackError) {
+          console.error(`[UPLOAD] Fallback upload also failed for ${file.originalname}:`, fallbackError.message)
+          throw error; // throw original error
+        }
+      }
+      
       throw error;
+    } finally {
+      // Log memory usage after processing
+      const memAfter = process.memoryUsage();
+      console.log(`[UPLOAD] Memory after processing: ${(memAfter.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfter.rss / 1024 / 1024).toFixed(2)}MB RSS`)
+      
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+        const memAfterGC = process.memoryUsage();
+        console.log(`[UPLOAD] Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`)
+      }
     }
-  }
-
-  /**
+  }  /**
    * Process regular image file - convert to AVIF variants
    */
   async processImageFile(file, bucketName, folderPath) {
+    const imageTimer = `Image-processing-${file.originalname}`;
+    console.time(imageTimer);
     console.log(`[IMAGE_PROCESS] Starting image processing for: ${file.originalname}`)
     const uploadResults = [];
     const sharp = require('sharp');
 
     try {
       // Extract EXIF metadata before processing
+      const metadataTimer = `Metadata-${file.originalname}`;
+      console.time(metadataTimer);
       console.log(`[IMAGE_PROCESS] Extracting metadata from: ${file.originalname}`)
       const image = sharp(file.buffer);
       const metadata = await image.metadata();
       const exifData = metadata.exif || null;
+      console.timeEnd(metadataTimer);
       console.log(`[IMAGE_PROCESS] Metadata extracted - Format: ${metadata.format}, Dimensions: ${metadata.width}x${metadata.height}, Has EXIF: ${!!exifData}`)
 
-      // Generate full-size AVIF and thumbnail variants
-      const variants = [
-        {
-          name: 'full',
-          width: null, // Keep original dimensions
-          height: null,
-          quality: 90,
-          format: 'avif'
-        },
-        {
-          name: 'thumbnail',
-          width: 300,
-          height: 300,
-          quality: 80,
-          format: 'avif'
-        }
-      ];
-
-      const baseName = require('path').parse(file.originalname).name;
-      console.log(`[IMAGE_PROCESS] Generating ${variants.length} variants for: ${baseName}`)
+      // ...existing code...
 
       // Process each variant
       for (const variant of variants) {
+        const variantTimer = `${variant.name}-variant-${file.originalname}`;
+        console.time(variantTimer);
         console.log(`[IMAGE_PROCESS] Processing variant: ${variant.name} (${variant.width}x${variant.height}, quality: ${variant.quality})`)
         let processedBuffer;
-        
+
         if (variant.name === 'full') {
           // For full-size, just convert format while preserving EXIF
           console.log(`[IMAGE_PROCESS] Converting full-size image to AVIF with quality ${variant.quality}`)
@@ -117,6 +137,9 @@ class UploadService {
             .heif({ quality: variant.quality, compression: 'av1' })
             .toBuffer();
         }
+        console.timeEnd(variantTimer);
+
+        // ...existing code...
 
         const variantData = {
           buffer: processedBuffer,
@@ -139,6 +162,8 @@ class UploadService {
           ? `${folderPath.replace(/\/$/, '')}/${variantData.filename}`
           : variantData.filename;
 
+        const minioUploadTimer = `MinIO-upload-${variant.name}-${file.originalname}`;
+        console.time(minioUploadTimer);
         console.log(`[IMAGE_PROCESS] Uploading variant to MinIO: ${variantObjectName}`)
         const uploadInfo = await this.minioClient.putObject(
           bucketName, 
@@ -155,25 +180,18 @@ class UploadService {
             'X-Amz-Meta-Converted-To': 'avif'
           }
         );
+        console.timeEnd(minioUploadTimer);
         console.log(`[IMAGE_PROCESS] Successfully uploaded variant: ${variantObjectName} (ETag: ${uploadInfo.etag})`)
 
-        uploadResults.push({
-          originalName: file.originalname,
-          objectName: variantObjectName,
-          variant: variant.name,
-          size: variantData.size,
-          mimetype: variantData.mimetype,
-          dimensions: variantData.dimensions,
-          etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId,
-          convertedFrom: metadata.format
-        });
+        // ...existing code...
       }
 
+      console.timeEnd(imageTimer);
       console.log(`[IMAGE_PROCESS] Image processing completed for: ${file.originalname} (${uploadResults.length} variants created)`)
       return uploadResults;
 
     } catch (imageError) {
+      console.timeEnd(imageTimer);
       console.error(`[IMAGE_PROCESS] Image processing failed for ${file.originalname}:`, imageError.message);
       console.log(`[IMAGE_PROCESS] Falling back to regular file upload for: ${file.originalname}`)
       // Fallback: upload original file if processing fails
@@ -185,6 +203,8 @@ class UploadService {
    * Process HEIC file - convert and upload variants
    */
   async processHeicFile(file, bucketName, folderPath) {
+    const uploadTimer = `HEIC-upload-${file.originalname}`;
+    console.time(uploadTimer);
     console.log(`[HEIC_PROCESS] Starting HEIC processing for: ${file.originalname}`)
     const uploadResults = [];
 
@@ -196,6 +216,8 @@ class UploadService {
       
       // Upload all variants (thumbnail)
       for (const [variantName, variantData] of Object.entries(variants)) {
+        const minioUploadTimer = `MinIO-upload-${variantName}-${file.originalname}`;
+        console.time(minioUploadTimer);
         console.log(`[HEIC_PROCESS] Uploading variant: ${variantName} - ${variantData.filename} (${(variantData.size / 1024).toFixed(2)}KB)`)
         const variantObjectName = folderPath 
           ? `${folderPath.replace(/\/$/, '')}/${variantData.filename}`
@@ -214,24 +236,18 @@ class UploadService {
             'X-Amz-Meta-Dimensions': JSON.stringify(variantData.dimensions)
           }
         );
+        console.timeEnd(minioUploadTimer);
         console.log(`[HEIC_PROCESS] Successfully uploaded variant: ${variantObjectName} (ETag: ${uploadInfo.etag})`)
 
-        uploadResults.push({
-          originalName: file.originalname,
-          objectName: variantObjectName,
-          variant: variantName,
-          size: variantData.size,
-          mimetype: variantData.mimetype,
-          dimensions: variantData.dimensions,
-          etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId
-        });
+        // ...existing code...
       }
 
+      console.timeEnd(uploadTimer);
       console.log(`[HEIC_PROCESS] HEIC processing completed for: ${file.originalname} (${uploadResults.length} variants uploaded)`)
       return uploadResults;
 
     } catch (heicError) {
+      console.timeEnd(uploadTimer);
       console.error(`[HEIC_PROCESS] HEIC processing failed for ${file.originalname}:`, heicError.message);
       console.log(`[HEIC_PROCESS] Falling back to original HEIC file upload for: ${file.originalname}`)
       // Fallback: upload original HEIC file with error metadata
@@ -243,6 +259,8 @@ class UploadService {
    * Upload regular (non-HEIC) file
    */
   async uploadRegularFile(file, bucketName, folderPath) {
+    const uploadTimer = `Regular-upload-${file.originalname}`;
+    console.time(uploadTimer);
     console.log(`[REGULAR_UPLOAD] Uploading regular file: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB)`)
     const objectName = folderPath 
       ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
@@ -260,6 +278,7 @@ class UploadService {
         'X-Amz-Meta-Upload-Date': new Date().toISOString()
       }
     );
+    console.timeEnd(uploadTimer);
     console.log(`[REGULAR_UPLOAD] Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`)
 
     return [{
