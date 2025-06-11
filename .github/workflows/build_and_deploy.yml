@@ -29,12 +29,13 @@ jobs:
               - package-lock.json
               - Dockerfile
               - .dockerignore
+            manifests:
+              - k8s/**
 
       - name: Set Environment Variables
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${{ env.IMAGE_NAME }}:$SHORT_SHA" >> $GITHUB_ENV
 
       - name: Login to GitHub Container Registry
         if: steps.changes.outputs.source == 'true'
@@ -47,22 +48,25 @@ jobs:
       - name: Build and Push Docker Image
         if: steps.changes.outputs.source == 'true'
         run: |
+          IMAGE_TAG=${{ env.IMAGE_NAME }}:$SHORT_SHA
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
           echo "Building and pushing image: $IMAGE_TAG"
           docker buildx build --platform linux/amd64 -t $IMAGE_TAG --push .
       
-      - name: Skip Build (No Source Changes)
+      - name: Skip Build and Deployment (No Changes)
         if: steps.changes.outputs.source != 'true'
         run: |
-          echo "No source code changes detected. Skipping Docker build."
-          echo "Using existing image tag for deployment: $IMAGE_TAG"
+          echo "No source code changes detected. Skipping build and deployment."
       
       - name: Set Up KUBECONFIG
+        if: steps.changes.outputs.source == 'true'
         run: |
           echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
           export KUBECONFIG=$PWD/kubeconfig.yaml
           echo "KUBECONFIG set to $KUBECONFIG"
                     
       - name: Deploy to Kubernetes
+        if: steps.changes.outputs.source == 'true'
         run: |
           echo "Deploying image: $IMAGE_TAG"
           
@@ -83,7 +87,7 @@ jobs:
           kubectl rollout status deployment/photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml --timeout=900s
 
       - name: Debug on Failure
-        if: failure()
+        if: failure() && steps.changes.outputs.source == 'true'
         run: |
           echo "Deployment failed. Gathering debug information..."
           kubectl describe deployment photovault-api --namespace=webapps --kubeconfig=$PWD/kubeconfig.yaml
