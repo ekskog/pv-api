@@ -16,8 +16,6 @@ spec:
       labels:
         app: photovault-api
     spec:
-      imagePullSecrets:
-      - name: ghcr-secret
       containers:
       - name: photovault-api
         image: ghcr.io/ekskog/photovault-api:latest
