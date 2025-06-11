@@ -103,7 +103,26 @@ class UploadService {
       console.timeEnd(metadataTimer);
       console.log(`[IMAGE_PROCESS] Metadata extracted - Format: ${metadata.format}, Dimensions: ${metadata.width}x${metadata.height}, Has EXIF: ${!!exifData}`)
 
-      // ...existing code...
+      // Generate full-size AVIF and thumbnail variants
+      const variants = [
+        {
+          name: 'full',
+          width: null, // Keep original dimensions
+          height: null,
+          quality: 90,
+          format: 'avif'
+        },
+        {
+          name: 'thumbnail',
+          width: 300,
+          height: 300,
+          quality: 80,
+          format: 'avif'
+        }
+      ];
+
+      const baseName = require('path').parse(file.originalname).name;
+      console.log(`[IMAGE_PROCESS] Generating ${variants.length} variants for: ${baseName}`)
 
       // Process each variant
       for (const variant of variants) {
@@ -138,8 +157,6 @@ class UploadService {
             .toBuffer();
         }
         console.timeEnd(variantTimer);
-
-        // ...existing code...
 
         const variantData = {
           buffer: processedBuffer,
@@ -183,7 +200,17 @@ class UploadService {
         console.timeEnd(minioUploadTimer);
         console.log(`[IMAGE_PROCESS] Successfully uploaded variant: ${variantObjectName} (ETag: ${uploadInfo.etag})`)
 
-        // ...existing code...
+        uploadResults.push({
+          originalName: file.originalname,
+          objectName: variantObjectName,
+          variant: variant.name,
+          size: variantData.size,
+          mimetype: variantData.mimetype,
+          dimensions: variantData.dimensions,
+          etag: uploadInfo.etag,
+          versionId: uploadInfo.versionId,
+          convertedFrom: metadata.format
+        });
       }
 
       console.timeEnd(imageTimer);
@@ -239,7 +266,16 @@ class UploadService {
         console.timeEnd(minioUploadTimer);
         console.log(`[HEIC_PROCESS] Successfully uploaded variant: ${variantObjectName} (ETag: ${uploadInfo.etag})`)
 
-        // ...existing code...
+        uploadResults.push({
+          originalName: file.originalname,
+          objectName: variantObjectName,
+          variant: variantName,
+          size: variantData.size,
+          mimetype: variantData.mimetype,
+          dimensions: variantData.dimensions,
+          etag: uploadInfo.etag,
+          versionId: uploadInfo.versionId
+        });
       }
 
       console.timeEnd(uploadTimer);
