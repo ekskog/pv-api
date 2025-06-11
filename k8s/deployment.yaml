@@ -5,6 +5,7 @@ metadata:
   namespace: webapps
   labels:
     app: photovault-api
+  # Updated to disable all health probes for crash debugging
 spec:
   replicas: 1
   selector:
@@ -33,6 +34,7 @@ spec:
         - name: log-storage
           mountPath: /app/logs
         # All probes completely disabled to prevent restart on crash
+        # Updated to trigger manifest redeployment
         resources:
           requests:
             memory: "128Mi"
