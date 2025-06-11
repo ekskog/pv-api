@@ -1,18 +1,20 @@
-apiVersion: batch/v1
-kind: Job
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: photovault-api
   namespace: webapps
   labels:
     app: photovault-api
 spec:
-  backoffLimit: 0  # Don't retry on failure
+  replicas: 1
+  selector:
+    matchLabels:
+      app: photovault-api
   template:
     metadata:
       labels:
         app: photovault-api
     spec:
-      restartPolicy: Never  # Don't restart containers on failure
       imagePullSecrets:
       - name: ghcr-secret
       containers:
@@ -30,7 +32,30 @@ spec:
         volumeMounts:
         - name: log-storage
           mountPath: /app/logs
-        # All probes disabled to prevent restart on crash for debugging
+        startupProbe:
+          httpGet:
+            path: /
+            port: 3001
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 1000  # Very high threshold to prevent restarts
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 60
+          periodSeconds: 3600  # Check every hour
+          timeoutSeconds: 30
+          failureThreshold: 1000  # Very high threshold to prevent restarts
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 3600  # Check every hour
+          timeoutSeconds: 30
+          failureThreshold: 1000  # Very high threshold to prevent restarts
         resources:
           requests:
             memory: "128Mi"
