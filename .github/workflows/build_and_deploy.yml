@@ -34,12 +34,19 @@ jobs:
         run: |
           echo "Building and pushing image: $IMAGE_TAG"
           docker buildx build --platform linux/amd64 -t $IMAGE_TAG --push .
+          echo "Image pushed successfully, waiting for registry sync..."
+          sleep 10
 
       - name: Set Up KUBECONFIG
         run: |
           echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
           export KUBECONFIG=$PWD/kubeconfig.yaml
           echo "KUBECONFIG set to $KUBECONFIG"
+
+      - name: Verify image exists before deployment
+        run: |
+          echo "Verifying image exists: $IMAGE_TAG"
+          docker manifest inspect $IMAGE_TAG
                     
       - name: Deploy to Kubernetes
         run: |
