@@ -1,10 +1,12 @@
 // Upload Service - Handles file uploads with HEIC processing
 const HeicProcessor = require('./heic-processor');
+const AvifConverterService = require('./avif-converter-service');
 
 class UploadService {
   constructor(minioClient) {
     this.minioClient = minioClient;
-    this.heicProcessor = new HeicProcessor();
+    this.heicProcessor = new HeicProcessor(); // Keep for now, will remove later
+    this.avifConverter = new AvifConverterService(); // STEP 3: Add microservice
   }
 
   /**
@@ -372,21 +374,41 @@ class UploadService {
   }
 
   /**
-   * Process HEIC file - convert and upload variants
+   * Process HEIC file - convert using microservice and upload variants
    */
   async processHeicFile(file, bucketName, folderPath) {
     const uploadTimer = `HEIC-upload-${file.originalname}`;
     console.time(uploadTimer);
-    console.log(`[HEIC_PROCESS] Starting HEIC processing for: ${file.originalname}`)
+    console.log(`[HEIC_PROCESS] Starting HEIC processing for: ${file.originalname} using microservice`)
     const uploadResults = [];
 
     try {
-      // Process HEIC file to create variants (just thumbnail now)
-      console.log(`[HEIC_PROCESS] Converting HEIC file using HeicProcessor: ${file.originalname}`)
-      const variants = await this.heicProcessor.processHeicFile(file.buffer, file.originalname);
-      console.log(`[HEIC_PROCESS] HEIC processing completed, generated ${Object.keys(variants).length} variants`)
+      // STEP 3: Use microservice for conversion instead of internal processing
+      console.log(`[HEIC_PROCESS] Converting HEIC file using avif-converter microservice: ${file.originalname}`)
       
-      // Upload all variants (thumbnail)
+      // Check if microservice is available
+      const isAvailable = await this.avifConverter.isAvailable();
+      if (!isAvailable) {
+        throw new Error('AVIF converter microservice is not available');
+      }
+      
+      // Convert using microservice
+      const conversionResult = await this.avifConverter.convertImage(
+        file.buffer, 
+        file.originalname, 
+        file.mimetype
+      );
+      
+      if (!conversionResult.success) {
+        throw new Error(`Microservice conversion failed: ${conversionResult.error}`);
+      }
+      
+      console.log(`[HEIC_PROCESS] Microservice conversion completed, received ${conversionResult.data.files ? conversionResult.data.files.length : 0} files`)
+      
+      // Process the actual file contents returned from microservice
+      const variants = this._processFileContentsFromMicroservice(conversionResult.data.files);
+      
+      // Upload all variants to MinIO
       for (const [variantName, variantData] of Object.entries(variants)) {
         const minioUploadTimer = `MinIO-upload-${variantName}-${file.originalname}`;
         console.time(minioUploadTimer);
@@ -405,7 +427,7 @@ class UploadService {
             'X-Amz-Meta-Original-Name': file.originalname,
             'X-Amz-Meta-Variant': variantName,
             'X-Amz-Meta-Upload-Date': new Date().toISOString(),
-            'X-Amz-Meta-Dimensions': JSON.stringify(variantData.dimensions)
+            'X-Amz-Meta-Converted-By': 'avif-converter-microservice'
           }
         );
         console.timeEnd(minioUploadTimer);
@@ -417,23 +439,76 @@ class UploadService {
           variant: variantName,
           size: variantData.size,
           mimetype: variantData.mimetype,
-          dimensions: variantData.dimensions,
           etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId
+          versionId: uploadInfo.versionId,
+          convertedBy: 'avif-converter-microservice'
         });
       }
 
       console.timeEnd(uploadTimer);
-      console.log(`[HEIC_PROCESS] HEIC processing completed for: ${file.originalname} (${uploadResults.length} variants uploaded)`)
+      console.log(`[HEIC_PROCESS] HEIC processing completed using microservice for: ${file.originalname} (${uploadResults.length} variants uploaded)`)
       return uploadResults;
 
-    } catch (heicError) {
+    } catch (error) {
       console.timeEnd(uploadTimer);
-      console.error(`[HEIC_PROCESS] HEIC processing failed for ${file.originalname}:`, heicError.message);
-      console.log(`[HEIC_PROCESS] Falling back to original HEIC file upload for: ${file.originalname}`)
-      // Fallback: upload original HEIC file with error metadata
-      return await this.uploadOriginalHeicAsFallback(file, bucketName, folderPath);
+      console.error(`[HEIC_PROCESS] HEIC processing failed for ${file.originalname}:`, error.message);
+      // STEP 3: No fallback - fail the upload if microservice fails
+      throw new Error(`HEIC conversion failed: ${error.message}`);
     }
+  }
+
+  /**
+   * STEP 4: Process actual file contents returned from microservice
+   * @param {Array} microserviceFiles - Array of file objects with base64 content
+   * @returns {Object} Variants object suitable for MinIO upload
+   */
+  _processFileContentsFromMicroservice(microserviceFiles) {
+    const variants = {};
+    
+    for (const fileData of microserviceFiles) {
+      try {
+        // Decode base64 content back to buffer
+        const fileBuffer = Buffer.from(fileData.content, 'base64');
+        
+        variants[fileData.variant] = {
+          buffer: fileBuffer,
+          filename: fileData.filename,
+          size: fileBuffer.length,
+          mimetype: fileData.mimetype || 'image/avif'
+        };
+        
+        console.log(`[UPLOAD] Processed ${fileData.variant} variant: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`);
+      } catch (error) {
+        console.error(`[UPLOAD] Failed to process file ${fileData.filename}:`, error.message);
+      }
+    }
+    
+    return variants;
+  }
+
+  /**
+   * STEP 3: Temporary method - will be removed
+   */
+  _simulateVariantsFromMicroservice(microserviceData, originalName) {
+    // For now, create dummy variants to test the upload flow
+    // In reality, we'd read the actual converted files from the microservice
+    const dummyAvifBuffer = Buffer.from('dummy avif content');
+    const baseName = originalName.replace(/\.[^/.]+$/, '');
+    
+    return {
+      full: {
+        buffer: dummyAvifBuffer,
+        filename: `${baseName}_full.avif`,
+        size: dummyAvifBuffer.length,
+        mimetype: 'image/avif'
+      },
+      thumbnail: {
+        buffer: dummyAvifBuffer,
+        filename: `${baseName}_thumbnail.avif`,
+        size: dummyAvifBuffer.length,
+        mimetype: 'image/avif'
+      }
+    };
   }
 
   /**
