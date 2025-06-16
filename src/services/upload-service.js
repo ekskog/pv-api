@@ -1,12 +1,20 @@
 // Upload Service - Handles file uploads with HEIC processing
-const HeicProcessor = require('./heic-processor');
 const AvifConverterService = require('./avif-converter-service');
 
 class UploadService {
   constructor(minioClient) {
     this.minioClient = minioClient;
-    this.heicProcessor = new HeicProcessor(); // Keep for now, will remove later
-    this.avifConverter = new AvifConverterService(); // STEP 3: Add microservice
+    this.avifConverter = new AvifConverterService();
+  }
+
+  /**
+   * Check if a file is a HEIC file
+   * @param {string} filename - Filename to check
+   * @returns {boolean} True if it's a HEIC file
+   */
+  static isHeicFile(filename) {
+    const heicExtensions = /\.(heic|heif)$/i;
+    return heicExtensions.test(filename);
   }
 
   /**
@@ -32,7 +40,7 @@ class UploadService {
     console.log(`[UPLOAD] Memory before processing: ${(memBefore.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memBefore.rss / 1024 / 1024).toFixed(2)}MB RSS`)
     
     const uploadResults = [];
-    const isHeic = HeicProcessor.isHeicFile(file.originalname);
+    const isHeic = UploadService.isHeicFile(file.originalname);
     const isImage = UploadService.isImageFile(file.originalname);
     
     console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}`)

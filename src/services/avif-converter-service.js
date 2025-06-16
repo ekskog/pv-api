@@ -1,8 +1,9 @@
 const fetch = require('node-fetch').default;
+const FormData = require('form-data');
 
 class AvifConverterService {
   constructor() {
-    this.baseUrl = process.env.AVIF_CONVERTER_URL || 'http://localhost:3001';
+    this.baseUrl = process.env.AVIF_CONVERTER_URL || 'http://localhost:3002';
     this.timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT) || 300000; // 5 minutes default
   }
 
@@ -50,12 +51,14 @@ class AvifConverterService {
     try {
       console.log(`[AVIF_CONVERTER] Converting image: ${originalName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB, ${mimeType})`);
       
-      // Create form data for multipart upload using Node.js built-in FormData
+      // Create form data for multipart upload using form-data package
       const formData = new FormData();
       
-      // Create a File object from the buffer
-      const file = new File([fileBuffer], originalName, { type: mimeType });
-      formData.append('image', file);
+      // Append the buffer as a file with proper filename and mime type
+      formData.append('image', fileBuffer, {
+        filename: originalName,
+        contentType: mimeType
+      });
       
       // Add parameter to request file contents
       if (returnContents) {
