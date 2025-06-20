@@ -12,6 +12,7 @@ const { authenticateToken, requireRole } = require('./middleware/auth')
 // Import services
 const UploadService = require('./services/upload-service')
 const AvifConverterService = require('./services/avif-converter-service')
+const redisService = require('./services/redis-service')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -79,23 +80,39 @@ app.get('/health', async (req, res) => {
   try {
     // Test MinIO connection by listing buckets
     const buckets = await minioClient.listBuckets()
-    res.json({
+    
+    // Test Redis connection
+    const redisStatus = await redisService.getConnectionStatus()
+    
+    const healthStatus = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       minio: {
         connected: true,
         buckets: buckets.length,
         endpoint: process.env.MINIO_ENDPOINT
-      }
-    })
+      },
+      redis: redisStatus
+    }
+    
+    // If Redis is not connected, still return healthy but with warning
+    if (!redisStatus.connected) {
+      healthStatus.status = 'degraded'
+      healthStatus.warnings = ['Redis connection unavailable - async uploads will be disabled']
+    }
+    
+    res.json(healthStatus)
   } catch (error) {
+    const redisStatus = await redisService.getConnectionStatus()
+    
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
       minio: {
         connected: false,
         error: error.message
-      }
+      },
+      redis: redisStatus
     })
   }
 })
@@ -580,6 +597,10 @@ async function startServer() {
     // Initialize database connection
     await initializeDatabase()
     
+    // Initialize Redis connection
+    console.log('Initializing Redis connection...')
+    await redisService.connect()
+    
     // Start HTTP server
     app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || 'demo'
@@ -606,6 +627,7 @@ process.on('SIGINT', async () => {
   if (process.env.AUTH_MODE === 'database') {
     await database.close()
   }
+  await redisService.disconnect()
   process.exit(0)
 })
 
