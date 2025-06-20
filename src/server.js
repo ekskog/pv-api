@@ -211,6 +211,88 @@ app.get('/upload/status/:jobId', async (req, res) => {
   }
 });
 
+// Test endpoint for Phase 2 (temporary)
+app.post('/test/job', async (req, res) => {
+  try {
+    if (!jobService.isAvailable()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Job service unavailable'
+      });
+    }
+
+    // Create test job
+    const testJobData = {
+      bucketName: 'photos',
+      folderPath: 'test-folder',
+      userId: 'test-user',
+      files: [
+        { originalName: 'test1.jpg', size: 1024000 },
+        { originalName: 'test2.heic', size: 2048000 }
+      ],
+      progress: { processed: 0, total: 2 }
+    };
+
+    const job = await jobService.createJob(testJobData);
+    
+    res.json({
+      success: true,
+      message: 'Test job created',
+      data: {
+        jobId: job.id,
+        status: job.status,
+        testEndpoint: `/upload/status/${job.id}`
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// POST /upload/test-job - Create a test job for Phase 2 testing
+app.post('/upload/test-job', async (req, res) => {
+  try {
+    if (!jobService.isAvailable()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Job service unavailable - Redis not connected'
+      });
+    }
+
+    const testJobData = {
+      bucketName: 'photos',
+      folderPath: 'test-folder',
+      userId: 'test-user',
+      files: [
+        { originalName: 'test1.jpg', size: 1024000 },
+        { originalName: 'test2.heic', size: 2048000 }
+      ],
+      progress: { processed: 0, total: 2 }
+    };
+
+    const job = await jobService.createJob(testJobData);
+    
+    res.json({
+      success: true,
+      message: 'Test job created successfully',
+      data: {
+        jobId: job.id,
+        status: job.status,
+        testEndpoint: `/upload/status/${job.id}`
+      }
+    });
+  } catch (error) {
+    console.error(`[API] Error creating test job:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // MinIO API Routes (Protected)
 
 // GET /buckets - List all buckets (public access for album browsing)
