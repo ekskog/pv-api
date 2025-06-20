@@ -13,6 +13,7 @@ const { authenticateToken, requireRole } = require('./middleware/auth')
 const UploadService = require('./services/upload-service')
 const AvifConverterService = require('./services/avif-converter-service')
 const redisService = require('./services/redis-service')
+const jobService = require('./services/job-service')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -173,6 +174,42 @@ app.post('/convert-test', upload.single('image'), async (req, res) => {
     })
   }
 })
+
+// Job Status API Routes
+
+// GET /upload/status/:jobId - Get upload job status
+app.get('/upload/status/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    
+    if (!jobService.isAvailable()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Job service unavailable - Redis not connected'
+      });
+    }
+
+    const job = await jobService.getJobStatus(jobId);
+    
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: 'Job not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: job
+    });
+  } catch (error) {
+    console.error(`[API] Error getting job status for ${req.params.jobId}:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // MinIO API Routes (Protected)
 
