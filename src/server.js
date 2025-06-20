@@ -252,47 +252,6 @@ app.post('/test/job', async (req, res) => {
   }
 });
 
-// POST /upload/test-job - Create a test job for Phase 2 testing
-app.post('/upload/test-job', async (req, res) => {
-  try {
-    if (!jobService.isAvailable()) {
-      return res.status(503).json({
-        success: false,
-        error: 'Job service unavailable - Redis not connected'
-      });
-    }
-
-    const testJobData = {
-      bucketName: 'photos',
-      folderPath: 'test-folder',
-      userId: 'test-user',
-      files: [
-        { originalName: 'test1.jpg', size: 1024000 },
-        { originalName: 'test2.heic', size: 2048000 }
-      ],
-      progress: { processed: 0, total: 2 }
-    };
-
-    const job = await jobService.createJob(testJobData);
-    
-    res.json({
-      success: true,
-      message: 'Test job created successfully',
-      data: {
-        jobId: job.id,
-        status: job.status,
-        testEndpoint: `/upload/status/${job.id}`
-      }
-    });
-  } catch (error) {
-    console.error(`[API] Error creating test job:`, error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // MinIO API Routes (Protected)
 
 // GET /buckets - List all buckets (public access for album browsing)
@@ -583,8 +542,39 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
 
     console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with upload processing`)
 
+    // **PHASE 3: Async Upload Implementation**
+    // Create job for async processing if Redis is available
+    let job = null;
+    if (jobService.isAvailable()) {
+      console.log('[UPLOAD] Creating async job for upload processing...')
+      
+      const jobData = {
+        bucketName,
+        folderPath: folderPath || '',
+        userId: req.user?.id || req.user?.username || 'unknown',
+        files: files.map(file => ({
+          originalName: file.originalname,
+          size: file.size,
+          mimetype: file.mimetype
+        })),
+        progress: { processed: 0, total: files.length }
+      };
+
+      job = await jobService.createJob(jobData);
+      console.log(`[UPLOAD] Created async job: ${job.id}`)
+    }
+
     // Use UploadService to handle file processing and upload
     console.log('[UPLOAD] Calling UploadService.processMultipleFiles()...')
+    
+    // Update job status to 'processing' if job exists
+    if (job) {
+      await jobService.updateJobStatus(job.id, { 
+        status: 'processing',
+        startedAt: new Date().toISOString()
+      });
+    }
+
     const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
 
     const processingTime = Date.now() - startTime
@@ -606,6 +596,19 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
       ))
     }
 
+    // Update job status to 'completed' or 'failed' if job exists
+    if (job) {
+      const finalStatus = errors.length === 0 ? 'completed' : 'failed';
+      await jobService.updateJobStatus(job.id, {
+        status: finalStatus,
+        progress: { processed: uploadResults.length, total: files.length },
+        completedAt: new Date().toISOString(),
+        results: uploadResults,
+        errors: errors.length > 0 ? errors : undefined
+      });
+      console.log(`[UPLOAD] Updated job ${job.id} status to: ${finalStatus}`)
+    }
+
     // Return results
     const response = {
       success: errors.length === 0,
@@ -614,7 +617,9 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
         folderPath: folderPath || '/',
         uploaded: uploadResults,
         uploadedCount: uploadResults.length,
-        totalFiles: files.length
+        totalFiles: files.length,
+        // Include job ID if async processing was used
+        jobId: job ? job.id : undefined
       }
     }
 
