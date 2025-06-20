@@ -1,4 +1,4 @@
-const fetch = require('node-fetch').default;
+// Using built-in fetch() available in Node.js 18+
 const FormData = require('form-data');
 
 class AvifConverterService {
