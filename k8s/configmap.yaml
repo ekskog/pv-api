@@ -1,4 +1,7 @@
-apiVersion: v1
+apiVer  PORT: "3001"
+  NODE_ENV: "production"
+  API_PREFIX: "/api/v1"
+  AVIF_CONVERTER_URL: "http://avif-converter:3002": v1
 kind: ConfigMap
 metadata:
   name: photovault-api-config
@@ -7,4 +10,4 @@ data:
   PORT: "3001"
   NODE_ENV: "production"
   API_PREFIX: "/api/v1"
-  AVIF_CONVERTER_URL: "http://avif-converter:3001"
+  AVIF_CONVERTER_URL: "http://avif-service:3001"
