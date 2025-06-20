@@ -1,5 +1,4 @@
 // Using built-in fetch() available in Node.js 18+
-const FormData = require('form-data');
 
 class AvifConverterService {
   constructor() {
@@ -51,14 +50,14 @@ class AvifConverterService {
     try {
       console.log(`[AVIF_CONVERTER] Converting image: ${originalName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB, ${mimeType})`);
       
-      // Create form data for multipart upload using form-data package
+      // Create form data for multipart upload using native FormData
       const formData = new FormData();
       
-      // Append the buffer as a file with proper filename and mime type
-      formData.append('image', fileBuffer, {
-        filename: originalName,
-        contentType: mimeType
-      });
+      // Create a Blob from the buffer with proper type
+      const blob = new Blob([fileBuffer], { type: mimeType });
+      
+      // Append the blob as a file with proper filename
+      formData.append('image', blob, originalName);
       
       // Add parameter to request file contents
       if (returnContents) {

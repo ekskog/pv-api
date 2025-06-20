@@ -23,11 +23,11 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "form-data": "^4.0.0",
     "jsonwebtoken": "^9.0.2",
     "minio": "^8.0.5",
     "multer": "^2.0.1",
-    "mysql2": "^3.6.5"
+    "mysql2": "^3.6.5",
+    "sharp": "^0.33.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

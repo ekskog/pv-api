@@ -7,3 +7,4 @@ data:
   PORT: "3001"
   NODE_ENV: "production"
   API_PREFIX: "/api/v1"
+  AVIF_CONVERTER_URL: "http://avif-converter:3001"
