@@ -542,9 +542,8 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
 
     console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with upload processing`)
 
-    // **PHASE 3: Async Upload Implementation**
-    // Create job for async processing if Redis is available
-    let job = null;
+    // **PHASE 3: FIXED Async Upload Implementation**
+    // Create job immediately and return job ID, then process in background
     if (jobService.isAvailable()) {
       console.log('[UPLOAD] Creating async job for upload processing...')
       
@@ -560,21 +559,34 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
         progress: { processed: 0, total: files.length }
       };
 
-      job = await jobService.createJob(jobData);
-      console.log(`[UPLOAD] Created async job: ${job.id}`)
+      const job = await jobService.createJob(jobData);
+      console.log(`[UPLOAD] Created async job: ${job.id} - returning immediately`)
+      
+      // **RETURN JOB ID IMMEDIATELY** 
+      const quickResponse = {
+        success: true,
+        message: 'Upload job created successfully',
+        data: {
+          bucket: bucketName,
+          folderPath: folderPath || '/',
+          jobId: job.id,
+          status: 'queued',
+          totalFiles: files.length,
+          processingAsync: true
+        }
+      };
+      
+      console.log(`[UPLOAD] Returning job ID immediately: ${job.id}`)
+      res.status(202).json(quickResponse); // 202 Accepted
+      
+      // **PROCESS FILES IN BACKGROUND (async, non-blocking)**
+      processFilesInBackground(job.id, files, bucketName, folderPath, uploadService, jobService, startTime);
+      
+      return; // Early return - response already sent
     }
 
-    // Use UploadService to handle file processing and upload
-    console.log('[UPLOAD] Calling UploadService.processMultipleFiles()...')
-    
-    // Update job status to 'processing' if job exists
-    if (job) {
-      await jobService.updateJobStatus(job.id, { 
-        status: 'processing',
-        startedAt: new Date().toISOString()
-      });
-    }
-
+    // **FALLBACK: Synchronous processing if Redis not available**
+    console.log('[UPLOAD] Redis not available - processing synchronously')
     const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
 
     const processingTime = Date.now() - startTime
@@ -714,6 +726,44 @@ app.get('/buckets/:bucketName/download', async (req, res) => {
     })
   }
 })
+
+// **Background Processing Function**
+async function processFilesInBackground(jobId, files, bucketName, folderPath, uploadService, jobService, startTime) {
+  try {
+    console.log(`[BACKGROUND] Starting background processing for job ${jobId}`)
+    
+    // Update job status to 'processing'
+    await jobService.updateJobStatus(jobId, { 
+      status: 'processing',
+      startedAt: new Date().toISOString()
+    });
+
+    // Process files
+    const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
+
+    const processingTime = Date.now() - startTime
+    console.log(`[BACKGROUND] Job ${jobId} processing complete in ${processingTime}ms`)
+    
+    // Update final job status
+    const finalStatus = errors.length === 0 ? 'completed' : 'failed';
+    await jobService.updateJobStatus(jobId, {
+      status: finalStatus,
+      progress: { processed: uploadResults.length, total: files.length },
+      completedAt: new Date().toISOString(),
+      results: uploadResults,
+      errors: errors.length > 0 ? errors : undefined
+    });
+    
+    console.log(`[BACKGROUND] Job ${jobId} finished: ${finalStatus}`)
+  } catch (error) {
+    console.error(`[BACKGROUND] Job ${jobId} failed:`, error.message);
+    await jobService.updateJobStatus(jobId, {
+      status: 'failed',
+      error: error.message,
+      completedAt: new Date().toISOString()
+    });
+  }
+}
 
 // Start server with database initialization
 async function startServer() {
