@@ -11,4 +11,3 @@ data:
   REDIS_HOST: "redis.data.svc.cluster.local"
   REDIS_PORT: "6379"
   REDIS_DB: "2"
-  REDIS_DB: "2"

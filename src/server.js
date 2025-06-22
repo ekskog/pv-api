@@ -78,12 +78,17 @@ app.use('/auth', authRoutes)
 
 // Health check route
 app.get('/health', async (req, res) => {
+  console.log(`[HEALTH] Health check request received from ${req.ip} at ${new Date().toISOString()}`)
   try {
+    console.log('[HEALTH] Testing MinIO connection...')
     // Test MinIO connection by listing buckets
     const buckets = await minioClient.listBuckets()
+    console.log(`[HEALTH] MinIO connection successful, found ${buckets.length} buckets`)
     
+    console.log('[HEALTH] Testing Redis connection...')
     // Test Redis connection
     const redisStatus = await redisService.getConnectionStatus()
+    console.log(`[HEALTH] Redis connection status: ${redisStatus.connected ? 'connected' : 'disconnected'}`)
     
     const healthStatus = {
       status: 'healthy',
@@ -102,10 +107,13 @@ app.get('/health', async (req, res) => {
       healthStatus.warnings = ['Redis connection unavailable - async uploads will be disabled']
     }
     
+    console.log('[HEALTH] Sending healthy response')
     res.json(healthStatus)
   } catch (error) {
+    console.log(`[HEALTH] Error during health check: ${error.message}`)
     const redisStatus = await redisService.getConnectionStatus()
     
+    console.log('[HEALTH] Sending unhealthy response')
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
@@ -117,65 +125,6 @@ app.get('/health', async (req, res) => {
     })
   }
 })
-
-// STEP 2: Test conversion endpoint (experimental - does not affect existing upload flow)
-app.post('/convert-test', upload.single('image'), async (req, res) => {
-  console.log('[CONVERT_TEST] Test conversion request received')
-  
-  try {
-    if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No image file provided' 
-      })
-    }
-
-    const { originalname, buffer, mimetype, size } = req.file
-    console.log(`[CONVERT_TEST] Processing: ${originalname} (${(size / 1024 / 1024).toFixed(2)}MB, ${mimetype})`)
-
-    // Check if avif-converter microservice is available
-    const isAvailable = await avifConverterService.isAvailable()
-    if (!isAvailable) {
-      return res.status(503).json({
-        success: false,
-        error: 'AVIF converter microservice is not available'
-      })
-    }
-
-    // Convert using microservice
-    console.log('[CONVERT_TEST] Calling AVIF converter microservice...')
-    const conversionResult = await avifConverterService.convertImage(buffer, originalname, mimetype)
-
-    if (conversionResult.success) {
-      console.log('[CONVERT_TEST] Conversion successful')
-      res.json({
-        success: true,
-        message: 'Image converted successfully using microservice',
-        data: conversionResult.data,
-        originalFile: {
-          name: originalname,
-          size: `${(size / 1024 / 1024).toFixed(2)}MB`,
-          mimetype: mimetype
-        }
-      })
-    } else {
-      console.error('[CONVERT_TEST] Conversion failed:', conversionResult.error)
-      res.status(500).json({
-        success: false,
-        error: conversionResult.error
-      })
-    }
-
-  } catch (error) {
-    console.error('[CONVERT_TEST] Unexpected error:', error.message)
-    res.status(500).json({
-      success: false,
-      error: error.message
-    })
-  }
-})
-
-// Job Status API Routes
 
 // GET /upload/status/:jobId - Get upload job status
 app.get('/upload/status/:jobId', async (req, res) => {
