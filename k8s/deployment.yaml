@@ -31,6 +31,22 @@ spec:
         volumeMounts:
         - name: log-storage
           mountPath: /app/logs
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 1800  # 30 minutes
+          failureThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 30
+          timeoutSeconds: 1800  # 30 minutes
+          failureThreshold: 1
         # All probes completely disabled to prevent restart on crash
         # even though copilot can't get this to work at all
         # Updated to trigger manifest redeployment

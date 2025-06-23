@@ -18,10 +18,22 @@ const jobService = require('./services/job-service')
 const app = express()
 const PORT = process.env.PORT || 3001
 
+// CORS Configuration - Allow frontend domain
+const corsOptions = {
+  origin: [
+    'https://photos.hbvu.su',
+    'http://localhost:5173', // For development
+    'http://localhost:3000'  // Alternative dev port
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token']
+}
+
 // Middleware
-app.use(cors())
-app.use(express.json({ limit: '500mb' }))
-app.use(express.urlencoded({ limit: '500mb', extended: true }))
+app.use(cors(corsOptions))
+app.use(express.json({ limit: '1gb' }))
+app.use(express.urlencoded({ limit: '1gb', extended: true }))
 
 // Initialize database connection if not in demo mode
 async function initializeDatabase() {
