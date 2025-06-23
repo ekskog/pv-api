@@ -61,7 +61,7 @@ class JobService {
       }
 
       const job = JSON.parse(jobData);
-      console.log(`[JOB] Retrieved job ${jobId} with status: ${job.status}`);
+      //console.log(`[JOB] Retrieved job ${jobId} with status: ${job.status}`);
       return job;
     } catch (error) {
       console.error(`[JOB] Failed to get job ${jobId}:`, error.message);
