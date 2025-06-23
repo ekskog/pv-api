@@ -35,18 +35,18 @@ spec:
           httpGet:
             path: /health
             port: 3001
-          initialDelaySeconds: 1800  # 30 minutes
-          periodSeconds: 60
-          timeoutSeconds: 1800  # 30 minutes
-          failureThreshold: 1
+          initialDelaySeconds: 15  # First check after 15 seconds
+          periodSeconds: 1800  # Every 30 minutes thereafter
+          timeoutSeconds: 30
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 3001
-          initialDelaySeconds: 1800  # 30 minutes
-          periodSeconds: 30
-          timeoutSeconds: 1800  # 30 minutes
-          failureThreshold: 1
+          initialDelaySeconds: 15  # First check after 15 seconds
+          periodSeconds: 1800  # Every 30 minutes thereafter
+          timeoutSeconds: 30
+          failureThreshold: 3
         # All probes completely disabled to prevent restart on crash
         # even though copilot can't get this to work at all
         # Updated to trigger manifest redeployment
