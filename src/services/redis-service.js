@@ -16,17 +16,26 @@ class RedisService {
     const redisHost = process.env.REDIS_HOST || 'localhost';
     const redisPort = process.env.REDIS_PORT || 6379;
     const redisDb = process.env.REDIS_DB || 2;
+    const redisUseTLS = process.env.REDIS_USE_TLS === 'true';
 
-    console.log(`[REDIS] Attempting to connect to Redis at ${redisHost}:${redisPort}, DB: ${redisDb}`);
+    console.log(`[REDIS] Attempting to connect to Redis at ${redisHost}:${redisPort}, DB: ${redisDb}, TLS: ${redisUseTLS}`);
 
     try {
+      const socketConfig = {
+        host: redisHost,
+        port: redisPort,
+        connectTimeout: 10000, // 10 seconds
+        lazyConnect: true
+      };
+
+      // Add TLS configuration if needed
+      if (redisUseTLS) {
+        socketConfig.tls = true;
+        socketConfig.rejectUnauthorized = false; // For self-signed certificates
+      }
+
       this.client = createClient({
-        socket: {
-          host: redisHost,
-          port: redisPort,
-          connectTimeout: 10000, // 10 seconds
-          lazyConnect: true
-        },
+        socket: socketConfig,
         database: redisDb
       });
 
