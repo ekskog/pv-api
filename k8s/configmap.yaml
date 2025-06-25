@@ -7,7 +7,7 @@ data:
   PORT: "3001"
   NODE_ENV: "production"
   API_PREFIX: "/api/v1"
-  AVIF_CONVERTER_URL: "http://avif-converter:3002"
+  AVIF_CONVERTER_URL: "http://avif-converter.webapps.svc.cluster.local:3002"
   REDIS_HOST: "redis.data.svc.cluster.local"
   REDIS_PORT: "6379"
   REDIS_DB: "2"
