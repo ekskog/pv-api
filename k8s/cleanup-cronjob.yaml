@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: photovault-api-cleanup
+  namespace: kube-system
+spec:
+  schedule: "15 2 * * *"  # Daily at 2:15 AM (offset from avif-converter)
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          hostNetwork: true
+          hostPID: true
+          volumes:
+          - name: docker-sock
+            hostPath:
+              path: /var/run/docker.sock
+          - name: containerd-sock
+            hostPath:
+              path: /run/k3s/containerd/containerd.sock
+          containers:
+          - name: cleanup
+            image: docker:20.10
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting PhotoVault API cleanup at $(date)"
+              
+              # Cleanup unused PhotoVault API images older than 48h
+              if command -v crictl >/dev/null 2>&1; then
+                echo "Cleaning up old PhotoVault API images..."
+                crictl images | grep "photovault-api" | awk '{print $3}' | while read img; do
+                  # Get image creation time and remove if older than 48h
+                  crictl rmi --prune
+                done
+              fi
+              
+              # Docker cleanup for PhotoVault API images
+              if command -v docker >/dev/null 2>&1; then
+                echo "Docker cleanup for PhotoVault API images..."
+                # Remove unused PhotoVault API images older than 48h
+                docker images --filter "reference=*photovault-api*" --filter "until=48h" -q | xargs -r docker rmi -f
+                docker system prune -f --filter "until=48h"
+              fi
+              
+              # Log remaining PhotoVault API images
+              echo "Remaining PhotoVault API images:"
+              if command -v crictl >/dev/null 2>&1; then
+                crictl images | grep "photovault-api" || echo "No PhotoVault API images found"
+              fi
+              
+              echo "PhotoVault API cleanup completed at $(date)"
+            volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: containerd-sock
+              mountPath: /run/containerd/containerd.sock
+            securityContext:
+              privileged: true
+          restartPolicy: OnFailure
+          nodeSelector:
+            node-role.kubernetes.io/master: "true"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1

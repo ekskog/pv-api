@@ -84,8 +84,19 @@ class AvifConverterService {
         throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      // Our updated Python API returns JSON with variants
-      const conversionResult = await response.json();
+      // Log the raw response before JSON parsing to debug production issues
+      const responseText = await response.text();
+      console.log(`[AVIF_CONVERTER] Raw response from converter (first 500 chars):`, responseText.substring(0, 500));
+      console.log(`[AVIF_CONVERTER] Response length:`, responseText.length);
+
+      // Parse the JSON response
+      let conversionResult;
+      try {
+        conversionResult = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error(`[AVIF_CONVERTER] JSON parsing failed. Raw response:`, responseText);
+        throw new Error(`JSON parsing failed: ${parseError.message}`);
+      }
       
       if (!conversionResult.success || !conversionResult.variants) {
         throw new Error(`Conversion failed: Invalid response format`);
