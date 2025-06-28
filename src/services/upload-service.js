@@ -28,6 +28,16 @@ class UploadService {
   }
 
   /**
+   * Check if a file is a video file
+   * @param {string} filename - Filename to check
+   * @returns {boolean} True if it's a video file
+   */
+  static isVideoFile(filename) {
+    const videoExtensions = /\.(mov|mp4|m4v|avi|mkv|webm|flv|wmv|3gp|m2ts|mts)$/i;
+    return videoExtensions.test(filename);
+  }
+
+  /**
    * Process and upload a single file
    * @param {Object} file - Multer file object
    * @param {string} bucketName - MinIO bucket name
@@ -42,8 +52,9 @@ class UploadService {
     const uploadResults = [];
     const isHeic = UploadService.isHEICFile(file.originalname);
     const isImage = UploadService.isImageFile(file.originalname);
+    const isVideo = UploadService.isVideoFile(file.originalname);
     
-    console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}`)
+    console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}, Video: ${isVideo}`)
     
     try {
       // Add overall timeout for file processing
@@ -54,8 +65,11 @@ class UploadService {
         } else if (isImage) {
           console.log(`[UPLOAD] Processing regular image file: ${file.originalname}`)
           return await this.processImageFile(file, bucketName, folderPath);
+        } else if (isVideo) {
+          console.log(`[UPLOAD] Processing video file: ${file.originalname}`)
+          return await this.processVideoFile(file, bucketName, folderPath);
         } else {
-          console.log(`[UPLOAD] Uploading non-image file as-is: ${file.originalname}`)
+          console.log(`[UPLOAD] Uploading non-media file as-is: ${file.originalname}`)
           return await this.uploadRegularFile(file, bucketName, folderPath);
         }
       })();
@@ -265,6 +279,69 @@ class UploadService {
       console.error(`[HEIC_PROCESS] HEIC processing failed for ${file.originalname}:`, error.message);
       // STEP 3: No fallback - fail the upload if microservice fails
       throw new Error(`HEIC conversion failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Process video file - upload directly to MinIO without conversion
+   * @param {Object} file - Multer file object
+   * @param {string} bucketName - MinIO bucket name
+   * @param {string} folderPath - Upload folder path
+   * @returns {Array} Upload results
+   */
+  async processVideoFile(file, bucketName, folderPath) {
+    const videoTimer = `Video-upload-${file.originalname}`;
+    console.time(videoTimer);
+    console.log(`[VIDEO_UPLOAD] Processing video file: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`)
+    
+    // Check file size limit for videos (larger than images)
+    const maxSizeMB = 2000; // 2GB limit for videos
+    const fileSizeMB = file.size / 1024 / 1024;
+    if (fileSizeMB > maxSizeMB) {
+      console.error(`[VIDEO_UPLOAD] Video file too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`)
+      throw new Error(`Video file too large: ${fileSizeMB.toFixed(2)}MB. Maximum allowed: ${maxSizeMB}MB`);
+    }
+
+    try {
+      // Create object name with video prefix for organization
+      const objectName = folderPath 
+        ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
+        : file.originalname;
+
+      console.log(`[VIDEO_UPLOAD] Uploading video to: ${objectName}`)
+      
+      // Upload directly to MinIO with video-specific metadata
+      const uploadInfo = await this.minioClient.putObject(
+        bucketName, 
+        objectName, 
+        file.buffer,
+        file.size,
+        {
+          'Content-Type': file.mimetype || 'video/quicktime', // Default to MOV if no mimetype
+          'X-Amz-Meta-Original-Name': file.originalname,
+          'X-Amz-Meta-Upload-Date': new Date().toISOString(),
+          'X-Amz-Meta-File-Type': 'video',
+          'X-Amz-Meta-Source': 'iPhone' // Assuming iPhone source based on user request
+        }
+      );
+
+      console.timeEnd(videoTimer);
+      console.log(`[VIDEO_UPLOAD] Successfully uploaded video: ${objectName} (ETag: ${uploadInfo.etag})`)
+
+      return [{
+        originalName: file.originalname,
+        objectName: objectName,
+        size: file.size,
+        mimetype: file.mimetype || 'video/quicktime',
+        etag: uploadInfo.etag,
+        versionId: uploadInfo.versionId,
+        fileType: 'video'
+      }];
+
+    } catch (error) {
+      console.timeEnd(videoTimer);
+      console.error(`[VIDEO_UPLOAD] Video upload failed for ${file.originalname}:`, error.message);
+      throw error;
     }
   }
 

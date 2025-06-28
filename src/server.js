@@ -32,8 +32,8 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions))
-app.use(express.json({ limit: '1gb' }))
-app.use(express.urlencoded({ limit: '1gb', extended: true }))
+app.use(express.json({ limit: '2gb' })) // Increased for video uploads
+app.use(express.urlencoded({ limit: '2gb', extended: true })) // Increased for video uploads
 
 // Initialize database connection if not in demo mode
 async function initializeDatabase() {
@@ -55,7 +55,7 @@ async function initializeDatabase() {
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 500 * 1024 * 1024 // 500MB limit for large HEIC files
+    fileSize: 2 * 1024 * 1024 * 1024 // 2GB limit for large video files from iPhone
   }
 })
 
@@ -647,6 +647,31 @@ app.get('/buckets/:bucketName/download', async (req, res) => {
     })
   }
 })
+
+// Supported file types endpoint
+app.get('/supported-formats', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      images: {
+        regular: ['jpg', 'jpeg', 'png', 'webp', 'tiff', 'tif', 'bmp'],
+        heic: ['heic', 'heif']
+      },
+      videos: ['mov', 'mp4', 'm4v', 'avi', 'mkv', 'webm', 'flv', 'wmv', '3gp', 'm2ts', 'mts'],
+      maxFileSizes: {
+        images: '100MB',
+        videos: '2GB',
+        other: '500MB'
+      },
+      processing: {
+        images: 'Converted to AVIF variants',
+        heic: 'Converted to AVIF variants', 
+        videos: 'Stored as-is (no conversion)',
+        other: 'Stored as-is'
+      }
+    }
+  });
+});
 
 // **Background Processing Function**
 async function processFilesInBackground(jobId, files, bucketName, folderPath, uploadService, jobService, startTime) {

@@ -9,7 +9,9 @@ A Node.js Express API for managing photo storage with MinIO backend. This API pr
 - 🗂️ **Bucket Management** - List and create MinIO buckets
 - 📁 **Folder Operations** - Create, delete, and list folders with recursive support
 - 📤 **File Upload** - Multi-file upload with folder organization
-- 🔍 **Object Listing** - List objects with folder structure or recursive traversal
+- �️ **Image Processing** - HEIC/HEIF conversion to AVIF with multiple variants
+- 🎥 **Video Support** - Upload iPhone videos (MOV/MP4) directly to storage
+- �🔍 **Object Listing** - List objects with folder structure or recursive traversal
 - 🔐 **MinIO Integration** - S3-compatible storage backend
 - 🐳 **Docker Ready** - Containerized deployment
 - ☸️ **Kubernetes Native** - Production-ready manifests
@@ -213,21 +215,39 @@ Delete a folder and all its contents.
 #### `POST /buckets/:bucketName/upload`
 Upload one or multiple files to a bucket with optional folder organization.
 
+**Supported File Types:**
+- **Images:** JPG, PNG, WebP, TIFF, BMP (converted to AVIF variants)
+- **HEIC/HEIF:** Apple's high-efficiency formats (converted to AVIF variants)
+- **Videos:** MOV, MP4, M4V, AVI, MKV, WebM, FLV, WMV, 3GP, M2TS, MTS (stored as-is)
+- **Other:** Any file type (stored as-is)
+
+**File Size Limits:**
+- Images: 100MB
+- Videos: 2GB  
+- Other files: 500MB
+
 **Form Data:**
 - `files` (file[], required) - Files to upload
 - `folderPath` (string, optional) - Target folder path
 
 **Example using curl:**
 ```bash
-# Upload to root of bucket
+# Upload photos to root of bucket
 curl -X POST \
   -F "files=@photo1.jpg" \
-  -F "files=@photo2.png" \
+  -F "files=@photo2.heic" \
   http://localhost:3001/buckets/photovault/upload
 
-# Upload to specific folder
+# Upload iPhone video to specific folder
+curl -X POST \
+  -F "files=@IMG_1234.MOV" \
+  -F "folderPath=videos/iphone" \
+  http://localhost:3001/buckets/photovault/upload
+
+# Mix of photos and videos
 curl -X POST \
   -F "files=@vacation.jpg" \
+  -F "files=@sunset.MOV" \
   -F "folderPath=trips/summer-2025" \
   http://localhost:3001/buckets/photovault/upload
 ```
@@ -280,6 +300,34 @@ GET /buckets/photovault/download?object=photo.jpg
 - Sets `Content-Type` based on file type
 - Sets `Content-Disposition` with original filename
 - Streams file directly (no JSON wrapper)
+
+#### `GET /supported-formats`
+Get information about supported file formats and processing behavior.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "images": {
+      "regular": ["jpg", "jpeg", "png", "webp", "tiff", "tif", "bmp"],
+      "heic": ["heic", "heif"]
+    },
+    "videos": ["mov", "mp4", "m4v", "avi", "mkv", "webm", "flv", "wmv", "3gp", "m2ts", "mts"],
+    "maxFileSizes": {
+      "images": "100MB",
+      "videos": "2GB", 
+      "other": "500MB"
+    },
+    "processing": {
+      "images": "Converted to AVIF variants",
+      "heic": "Converted to AVIF variants",
+      "videos": "Stored as-is (no conversion)",
+      "other": "Stored as-is"
+    }
+  }
+}
+```
 
 ## Environment Variables
 
