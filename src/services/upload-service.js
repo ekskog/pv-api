@@ -1,11 +1,135 @@
 // Upload Service - Handles file uploads with HEIC processing
 const AvifConverterService = require('./avif-converter-service');
+// const ExifReader = require('exifreader');
+// const FolderMetadataService = require('./folder-metadata-service');
 
 class UploadService {
   constructor(minioClient) {
     this.minioClient = minioClient;
     this.avifConverter = new AvifConverterService();
+    // this.folderMetadata = new FolderMetadataService(minioClient);
   }
+
+  /**
+   * Extract EXIF metadata from image buffer
+   * @param {Buffer} imageBuffer - Image buffer
+   * @param {string} filename - Filename for logging
+   * @returns {Object} Extracted EXIF data
+   */
+  /*
+  extractExifFromBuffer(imageBuffer, filename) {
+    try {
+      const tags = ExifReader.load(imageBuffer);
+      
+      const exifData = {
+        dateTaken: null,
+        cameraMake: null,
+        cameraModel: null,
+        gpsCoordinates: null,
+        orientation: null,
+        hasExif: false
+      };
+
+      // Extract date taken (priority order)
+      if (tags.DateTimeOriginal?.description) {
+        exifData.dateTaken = this.parseExifDate(tags.DateTimeOriginal.description);
+        exifData.hasExif = true;
+      } else if (tags.DateTime?.description) {
+        exifData.dateTaken = this.parseExifDate(tags.DateTime.description);
+        exifData.hasExif = true;
+      } else if (tags.DateTimeDigitized?.description) {
+        exifData.dateTaken = this.parseExifDate(tags.DateTimeDigitized.description);
+        exifData.hasExif = true;
+      }
+
+      // Extract camera information
+      if (tags.Make?.description) {
+        exifData.cameraMake = tags.Make.description.trim();
+        exifData.hasExif = true;
+      }
+
+      if (tags.Model?.description) {
+        exifData.cameraModel = tags.Model.description.trim();
+        exifData.hasExif = true;
+      }
+
+      // Extract orientation
+      if (tags.Orientation?.value) {
+        exifData.orientation = tags.Orientation.value;
+        exifData.hasExif = true;
+      }
+
+      // Extract GPS coordinates
+      if (tags.GPSLatitude && tags.GPSLongitude) {
+        const lat = this.parseGPSCoordinate(tags.GPSLatitude, tags.GPSLatitudeRef?.description);
+        const lon = this.parseGPSCoordinate(tags.GPSLongitude, tags.GPSLongitudeRef?.description);
+        if (lat !== null && lon !== null) {
+          exifData.gpsCoordinates = `${lat},${lon}`;
+          exifData.hasExif = true;
+        }
+      }
+
+      console.log(`[EXIF] Extracted from ${filename}:`, {
+        dateTaken: exifData.dateTaken,
+        camera: exifData.cameraMake && exifData.cameraModel ? `${exifData.cameraMake} ${exifData.cameraModel}` : null,
+        hasGPS: !!exifData.gpsCoordinates,
+        orientation: exifData.orientation
+      });
+
+      return exifData;
+
+    } catch (error) {
+      console.warn(`[EXIF] Failed to extract EXIF from ${filename}: ${error.message}`);
+      return { hasExif: false };
+    }
+  }
+  */
+
+  /**
+   * Parse EXIF date string to ISO format
+   */
+  /*
+  parseExifDate(exifDateString) {
+    try {
+      // EXIF date format: "2024:12:25 10:30:45"
+      const cleanDate = exifDateString.replace(/(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
+      const date = new Date(cleanDate);
+      return date.toISOString();
+    } catch (error) {
+      console.warn(`[EXIF] Failed to parse date: ${exifDateString}`);
+      return null;
+    }
+  }
+
+  /**
+   * Parse GPS coordinate from EXIF data
+   */
+  parseGPSCoordinate(coordinate, ref) {
+    try {
+      if (!coordinate.description) return null;
+      
+      const coords = coordinate.description.split(',').map(c => parseFloat(c.trim()));
+      if (coords.length !== 3) return null;
+      
+      let decimal = coords[0] + coords[1]/60 + coords[2]/3600;
+      
+      // Apply hemisphere reference
+      if (ref && (ref === 'S' || ref === 'W')) {
+        decimal = -decimal;
+      }
+      
+      return decimal;
+    } catch (error) {
+      return null;
+    }
+  }
+  */
+
+  /**
+   * Check if a file is a HEIC file
+   * @param {string} filename - Filename to check
+   * @returns {boolean} True if it's a HEIC file
+   */
 
   /**
    * Check if a file is a HEIC file
@@ -56,22 +180,39 @@ class UploadService {
     
     console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}, Video: ${isVideo}`)
     
+    // Extract EXIF metadata from original file buffer (before conversion)
+    // let extractedMetadata = null;
+    // if (isHeic || isImage) {
+    //   console.log(`[UPLOAD] Extracting EXIF metadata from original file: ${file.originalname}`);
+    //   extractedMetadata = this.extractExifFromBuffer(file.buffer, file.originalname);
+    // }
+    
     try {
       // Add overall timeout for file processing
       const processingPromise = (async () => {
+        let uploadResults;
         if (isHeic) {
           console.log(`[UPLOAD] Processing HEIC file: ${file.originalname}`)
-          return await this.processHEICFile(file, bucketName, folderPath);
+          uploadResults = await this.processHEICFile(file, bucketName, folderPath);
         } else if (isImage) {
           console.log(`[UPLOAD] Processing regular image file: ${file.originalname}`)
-          return await this.processImageFile(file, bucketName, folderPath);
+          uploadResults = await this.processImageFile(file, bucketName, folderPath);
         } else if (isVideo) {
           console.log(`[UPLOAD] Processing video file: ${file.originalname}`)
-          return await this.processVideoFile(file, bucketName, folderPath);
+          uploadResults = await this.processVideoFile(file, bucketName, folderPath);
         } else {
           console.log(`[UPLOAD] Uploading non-media file as-is: ${file.originalname}`)
-          return await this.uploadRegularFile(file, bucketName, folderPath);
+          uploadResults = await this.uploadRegularFile(file, bucketName, folderPath);
         }
+
+        // Update JSON metadata with already extracted data (non-blocking)
+        // if ((isHeic || isImage) && uploadResults && uploadResults.length > 0 && extractedMetadata) {
+        //   this.updateJsonMetadataAsync(bucketName, uploadResults, extractedMetadata, file.originalname).catch(error => {
+        //     console.error(`[METADATA] Failed to update JSON metadata for ${file.originalname}:`, error.message);
+        //   });
+        // }
+
+        return uploadResults;
       })();
 
       const timeoutPromise = new Promise((_, reject) => 
@@ -86,7 +227,9 @@ class UploadService {
       if (error.message.includes('timeout') || error.message.includes('processing')) {
         console.log(`[UPLOAD] Attempting fallback upload for: ${file.originalname}`)
         try {
-          return await this.uploadRegularFile(file, bucketName, folderPath);
+          const fallbackResults = await this.uploadRegularFile(file, bucketName, folderPath);
+          
+          return fallbackResults;
         } catch (fallbackError) {
           console.error(`[UPLOAD] Fallback upload also failed for ${file.originalname}:`, fallbackError.message)
           throw error; // throw original error
@@ -116,13 +259,6 @@ class UploadService {
     
     // Check file size limit to prevent memory issues
     const maxSizeMB = 100; // 100MB limit
-    const fileSizeMB = file.size / 1024 / 1024;
-    if (fileSizeMB > maxSizeMB) {
-      console.error(`[IMAGE_PROCESS] File too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`)
-      throw new Error(`File too large: ${fileSizeMB.toFixed(2)}MB. Maximum allowed: ${maxSizeMB}MB`);
-    }
-    
-    const uploadResults = [];
 
     try {
       // Use microservice for conversion
@@ -469,6 +605,56 @@ class UploadService {
       heicProcessingFailed: true
     }];
   }
+
+  /**
+   * Update JSON metadata file using already extracted EXIF data (async, non-blocking)
+   * @param {string} bucketName - MinIO bucket name
+   * @param {Array} uploadResults - Array of upload results
+   * @param {Object} extractedMetadata - Already extracted EXIF metadata
+   * @param {string} originalFilename - Original filename for logging
+   */
+  /*
+  async updateJsonMetadataAsync(bucketName, uploadResults, extractedMetadata, originalFilename) {
+    try {
+      // Only update metadata for full-size images (not thumbnails)
+      const fullSizeUploads = uploadResults.filter(result => 
+        this.folderMetadata.isFullSizeImage(result.objectName) && 
+        !result.variant?.includes('thumb')
+      );
+
+      if (fullSizeUploads.length === 0) {
+        console.log(`[METADATA] No full-size images to update JSON metadata for: ${originalFilename}`);
+        return;
+      }
+
+      // Update JSON metadata for each full-size upload using already extracted data
+      for (const uploadResult of fullSizeUploads) {
+        try {
+          console.log(`[METADATA] Updating JSON metadata for ${uploadResult.objectName} using pre-extracted EXIF data`);
+          
+          // Use the folder metadata service to update the JSON file with extracted data
+          await this.folderMetadata.updateFolderMetadataWithExif(
+            bucketName,
+            uploadResult.objectName,
+            extractedMetadata,
+            uploadResult,
+            originalFilename
+          );
+          
+          console.log(`[METADATA] Successfully updated JSON metadata for ${uploadResult.objectName}`);
+          
+        } catch (metadataError) {
+          console.error(`[METADATA] Failed to update JSON metadata for ${uploadResult.objectName}:`, metadataError.message);
+          // Continue with other files even if one fails
+        }
+      }
+
+    } catch (error) {
+      console.error(`[METADATA] Failed to update JSON metadata for ${originalFilename}:`, error.message);
+      // Don't fail the upload if metadata update fails
+    }
+  }
+  */
 
   /**
    * Process multiple files in batch

@@ -2,7 +2,7 @@
 
 class AvifConverterService {
   constructor() {
-    this.baseUrl = process.env.AVIF_CONVERTER_URL || 'http://localhost:8000';
+    this.baseUrl = process.env.AVIF_CONVERTER_URL || 'http://localhost:3000';
     this.timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT) || 300000; // 5 minutes default
   }
 
@@ -50,18 +50,16 @@ class AvifConverterService {
     try {
       console.log(`[AVIF_CONVERTER] Converting image: ${originalName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB, ${mimeType})`);
       
-      // Determine the correct endpoint based on file type
+      // Check if file type is supported for AVIF conversion
       const isHEIC = /\.(heic|heif)$/i.test(originalName);
       const isJPEG = /\.(jpg|jpeg)$/i.test(originalName);
       
-      let endpoint;
-      if (isHEIC) {
-        endpoint = '/convert';
-      } else if (isJPEG) {
-        endpoint = '/convert-jpeg';
-      } else {
+      if (!isHEIC && !isJPEG) {
         throw new Error(`Unsupported file type for AVIF conversion: ${originalName}`);
       }
+      
+      // Use single endpoint for all supported formats
+      const endpoint = '/convert';
       
       // Create form data for multipart upload using native FormData
       const formData = new FormData();
@@ -69,8 +67,8 @@ class AvifConverterService {
       // Create a Blob from the buffer with proper type
       const blob = new Blob([fileBuffer], { type: mimeType });
       
-      // Append the blob as a file with proper filename (our Python API expects 'file' field)
-      formData.append('file', blob, originalName);
+      // Append the blob as a file with proper filename (Go service expects 'image' field)
+      formData.append('image', blob, originalName);
 
       console.log(`[AVIF_CONVERTER] Sending conversion request to: ${this.baseUrl}${endpoint}`);
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -84,37 +82,39 @@ class AvifConverterService {
         throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      // Log the raw response before JSON parsing to debug production issues
-      const responseText = await response.text();
-      console.log(`[AVIF_CONVERTER] Raw response from converter (first 500 chars):`, responseText.substring(0, 500));
-      console.log(`[AVIF_CONVERTER] Response length:`, responseText.length);
+      // Go microservice returns binary AVIF data, not JSON
+      const avifBuffer = await response.arrayBuffer();
+      console.log(`[AVIF_CONVERTER] Received AVIF data: ${avifBuffer.byteLength} bytes`);
 
-      // Parse the JSON response
-      let conversionResult;
-      try {
-        conversionResult = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error(`[AVIF_CONVERTER] JSON parsing failed. Raw response:`, responseText);
-        throw new Error(`JSON parsing failed: ${parseError.message}`);
-      }
+      // Create the base filename without extension
+      const baseName = originalName.replace(/\.[^/.]+$/, '');
       
-      if (!conversionResult.success || !conversionResult.variants) {
-        throw new Error(`Conversion failed: Invalid response format`);
-      }
-      
-      console.log(`[AVIF_CONVERTER] Conversion successful: ${conversionResult.variants.length} variants for ${originalName}`);
+      // Create full-size variant from the converted AVIF
+      const fullVariant = {
+        filename: `${baseName}.avif`,
+        content: Buffer.from(avifBuffer).toString('base64'),
+        size: avifBuffer.byteLength,
+        mimetype: 'image/avif',
+        variant: 'full'
+      };
+
+      // For now, we'll use the same AVIF for thumbnail
+      // TODO: In the future, we could modify the Go service to return multiple sizes
+      const thumbnailVariant = {
+        filename: `${baseName}_thumb.avif`,
+        content: Buffer.from(avifBuffer).toString('base64'),
+        size: avifBuffer.byteLength,
+        mimetype: 'image/avif',
+        variant: 'thumbnail'
+      };
+
+      console.log(`[AVIF_CONVERTER] Conversion successful: created full and thumbnail variants for ${originalName}`);
 
       // Return data in the format expected by upload-service.js
       return {
         success: true,
         data: {
-          files: conversionResult.variants.map(variant => ({
-            filename: variant.filename,
-            content: variant.content, // Already base64 encoded by Python service
-            size: variant.size,
-            mimetype: variant.mimetype,
-            variant: variant.variant
-          }))
+          files: [fullVariant, thumbnailVariant]
         }
       };
 

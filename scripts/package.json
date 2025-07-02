@@ -1,0 +1,28 @@
+{
+  "name": "photovault-exif-extractor",
+  "version": "1.0.0",
+  "description": "EXIF metadata extraction script for PhotoVault",
+  "main": "extract-exif-metadata.js",
+  "scripts": {
+    "extract": "node extract-exif-metadata.js",
+    "extract:dry-run": "node extract-exif-metadata.js --dry-run",
+    "extract:help": "node extract-exif-metadata.js --help"
+  },
+  "dependencies": {
+    "exifreader": "^4.23.7",
+    "minio": "^8.0.5",
+    "dotenv": "^16.5.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "exif",
+    "metadata",
+    "minio",
+    "photography",
+    "photovault"
+  ],
+  "author": "PhotoVault Team",
+  "license": "ISC"
+}
