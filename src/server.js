@@ -12,6 +12,7 @@ const { authenticateToken, requireRole } = require('./middleware/auth')
 // Import services
 const UploadService = require('./services/upload-service')
 const AvifConverterService = require('./services/avif-converter-service')
+const MetadataService = require('./services/metadata-service')
 const redisService = require('./services/redis-service')
 const jobService = require('./services/job-service')
 
@@ -70,6 +71,9 @@ const minioClient = new Client({
 
 // Initialize Upload Service
 const uploadService = new UploadService(minioClient)
+
+// Initialize Metadata Service
+const metadataService = new MetadataService(minioClient)
 
 // Initialize AVIF Converter Service (Step 2: Test integration)
 const avifConverterService = new AvifConverterService()
@@ -461,7 +465,44 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
       })
     }
 
-    console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with upload processing`)
+    console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with EXIF metadata testing`)
+
+    // **FOR TESTING: EXTRACT EXIF METADATA AND EXIT IMMEDIATELY**
+    console.log('\n🧪 [TESTING MODE] EXTRACTING EXIF METADATA FROM UPLOADED FILES')
+    console.log('='.repeat(80))
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      console.log(`\n📁 Processing file ${i + 1}/${files.length}: ${file.originalname}`)
+      
+      // Extract EXIF metadata using the unified metadata service
+      const exifData = metadataService.extractExifFromBuffer(file.buffer, file.originalname)
+      
+      // Log additional file information
+      console.log(`📊 File Information:`)
+      console.log(`   Original Name: ${file.originalname}`)
+      console.log(`   MIME Type: ${file.mimetype}`)
+      console.log(`   Buffer Size: ${(file.buffer.length / 1024 / 1024).toFixed(2)} MB`)
+      console.log(`   Upload Field Name: ${file.fieldname}`)
+    }
+    
+    console.log('\n🚪 [TESTING MODE] EXITING AFTER METADATA EXTRACTION - NO UPLOAD PROCESSING')
+    console.log('='.repeat(80))
+    
+    // Return test response and exit
+    return res.status(200).json({
+      success: true,
+      message: 'EXIF metadata extraction test completed',
+      data: {
+        bucket: bucketName,
+        folderPath: folderPath || '/',
+        filesProcessed: files.length,
+        testMode: true,
+        message: 'Check server console for EXIF metadata output'
+      }
+    })
+
+    // **ORIGINAL CODE BELOW - NOT EXECUTED IN TEST MODE**
 
     // **PHASE 3: FIXED Async Upload Implementation**
     // Create job immediately and return job ID, then process in background

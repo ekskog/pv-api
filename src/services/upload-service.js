@@ -1,135 +1,13 @@
 // Upload Service - Handles file uploads with HEIC processing
 const AvifConverterService = require('./avif-converter-service');
-// const ExifReader = require('exifreader');
-// const FolderMetadataService = require('./folder-metadata-service');
+const MetadataService = require('./metadata-service');
 
 class UploadService {
   constructor(minioClient) {
     this.minioClient = minioClient;
     this.avifConverter = new AvifConverterService();
-    // this.folderMetadata = new FolderMetadataService(minioClient);
+    this.metadataService = new MetadataService(minioClient);
   }
-
-  /**
-   * Extract EXIF metadata from image buffer
-   * @param {Buffer} imageBuffer - Image buffer
-   * @param {string} filename - Filename for logging
-   * @returns {Object} Extracted EXIF data
-   */
-  /*
-  extractExifFromBuffer(imageBuffer, filename) {
-    try {
-      const tags = ExifReader.load(imageBuffer);
-      
-      const exifData = {
-        dateTaken: null,
-        cameraMake: null,
-        cameraModel: null,
-        gpsCoordinates: null,
-        orientation: null,
-        hasExif: false
-      };
-
-      // Extract date taken (priority order)
-      if (tags.DateTimeOriginal?.description) {
-        exifData.dateTaken = this.parseExifDate(tags.DateTimeOriginal.description);
-        exifData.hasExif = true;
-      } else if (tags.DateTime?.description) {
-        exifData.dateTaken = this.parseExifDate(tags.DateTime.description);
-        exifData.hasExif = true;
-      } else if (tags.DateTimeDigitized?.description) {
-        exifData.dateTaken = this.parseExifDate(tags.DateTimeDigitized.description);
-        exifData.hasExif = true;
-      }
-
-      // Extract camera information
-      if (tags.Make?.description) {
-        exifData.cameraMake = tags.Make.description.trim();
-        exifData.hasExif = true;
-      }
-
-      if (tags.Model?.description) {
-        exifData.cameraModel = tags.Model.description.trim();
-        exifData.hasExif = true;
-      }
-
-      // Extract orientation
-      if (tags.Orientation?.value) {
-        exifData.orientation = tags.Orientation.value;
-        exifData.hasExif = true;
-      }
-
-      // Extract GPS coordinates
-      if (tags.GPSLatitude && tags.GPSLongitude) {
-        const lat = this.parseGPSCoordinate(tags.GPSLatitude, tags.GPSLatitudeRef?.description);
-        const lon = this.parseGPSCoordinate(tags.GPSLongitude, tags.GPSLongitudeRef?.description);
-        if (lat !== null && lon !== null) {
-          exifData.gpsCoordinates = `${lat},${lon}`;
-          exifData.hasExif = true;
-        }
-      }
-
-      console.log(`[EXIF] Extracted from ${filename}:`, {
-        dateTaken: exifData.dateTaken,
-        camera: exifData.cameraMake && exifData.cameraModel ? `${exifData.cameraMake} ${exifData.cameraModel}` : null,
-        hasGPS: !!exifData.gpsCoordinates,
-        orientation: exifData.orientation
-      });
-
-      return exifData;
-
-    } catch (error) {
-      console.warn(`[EXIF] Failed to extract EXIF from ${filename}: ${error.message}`);
-      return { hasExif: false };
-    }
-  }
-  */
-
-  /**
-   * Parse EXIF date string to ISO format
-   */
-  /*
-  parseExifDate(exifDateString) {
-    try {
-      // EXIF date format: "2024:12:25 10:30:45"
-      const cleanDate = exifDateString.replace(/(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
-      const date = new Date(cleanDate);
-      return date.toISOString();
-    } catch (error) {
-      console.warn(`[EXIF] Failed to parse date: ${exifDateString}`);
-      return null;
-    }
-  }
-
-  /**
-   * Parse GPS coordinate from EXIF data
-   */
-  parseGPSCoordinate(coordinate, ref) {
-    try {
-      if (!coordinate.description) return null;
-      
-      const coords = coordinate.description.split(',').map(c => parseFloat(c.trim()));
-      if (coords.length !== 3) return null;
-      
-      let decimal = coords[0] + coords[1]/60 + coords[2]/3600;
-      
-      // Apply hemisphere reference
-      if (ref && (ref === 'S' || ref === 'W')) {
-        decimal = -decimal;
-      }
-      
-      return decimal;
-    } catch (error) {
-      return null;
-    }
-  }
-  */
-
-  /**
-   * Check if a file is a HEIC file
-   * @param {string} filename - Filename to check
-   * @returns {boolean} True if it's a HEIC file
-   */
 
   /**
    * Check if a file is a HEIC file
