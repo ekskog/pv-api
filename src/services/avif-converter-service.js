@@ -12,7 +12,7 @@ class AvifConverterService {
    */
   async checkHealth() {
     try {
-      console.log(`[AVIF_CONVERTER] Checking health at: ${this.baseUrl}/health`);
+      //console.log(`[AVIF_CONVERTER] Checking health at: ${this.baseUrl}/health`);
       const response = await fetch(`${this.baseUrl}/health`, {
         method: 'GET',
         timeout: 5000 // 5 second timeout for health checks
@@ -23,7 +23,7 @@ class AvifConverterService {
       }
       
       const data = await response.json();
-      console.log(`[AVIF_CONVERTER] Health check successful:`, data);
+      //console.log(`[AVIF_CONVERTER] Health check successful:`, data);
       
       return {
         success: true,
@@ -48,7 +48,7 @@ class AvifConverterService {
    */
   async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
     try {
-      console.log(`[AVIF_CONVERTER] Converting image: ${originalName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB, ${mimeType})`);
+      //console.log(`[AVIF_CONVERTER] Converting image: ${originalName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB, ${mimeType})`);
       
       // Check if file type is supported for AVIF conversion
       const isHEIC = /\.(heic|heif)$/i.test(originalName);
@@ -70,7 +70,7 @@ class AvifConverterService {
       // Append the blob as a file with proper filename (Python service expects 'file' field)
       formData.append('file', blob, originalName);
 
-      console.log(`[AVIF_CONVERTER] Sending conversion request to: ${this.baseUrl}${endpoint}`);
+      //console.log(`[AVIF_CONVERTER] Sending conversion request to: ${this.baseUrl}${endpoint}`);
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         method: 'POST',
         body: formData,
@@ -84,7 +84,7 @@ class AvifConverterService {
 
       // Python microservice returns JSON with base64-encoded variants
       const responseData = await response.json();
-      console.log(`[AVIF_CONVERTER] Received JSON response with ${responseData.variants?.length || 0} variants`);
+      //console.log(`[AVIF_CONVERTER] Received JSON response with ${responseData.variants?.length || 0} variants`);
 
       if (!responseData.success || !responseData.variants || responseData.variants.length === 0) {
         throw new Error('Conversion failed: No variants returned from microservice');
@@ -94,7 +94,7 @@ class AvifConverterService {
       const files = [];
 
       for (const variant of responseData.variants) {
-        console.log(`[AVIF_CONVERTER] Processing variant: ${variant.variant} (${variant.size} bytes)`);
+        //console.log(`[AVIF_CONVERTER] Processing variant: ${variant.variant} (${variant.size} bytes)`);
         
         // Convert to the format expected by upload service
         files.push({
@@ -106,7 +106,7 @@ class AvifConverterService {
         });
       }
 
-      console.log(`[AVIF_CONVERTER] Successfully processed ${files.length} variants`);
+      //console.log(`[AVIF_CONVERTER] Successfully processed ${files.length} variants`);
       return {
         success: true,
         data: {

@@ -18,7 +18,7 @@ class RedisService {
     const redisDb = process.env.REDIS_DB || 2;
     const redisUseTLS = process.env.REDIS_USE_TLS === 'true';
 
-    console.log(`[REDIS] Attempting to connect to Redis at ${redisHost}:${redisPort}, DB: ${redisDb}, TLS: ${redisUseTLS}`);
+    //console.log(`[REDIS] Attempting to connect to Redis at ${redisHost}:${redisPort}, DB: ${redisDb}, TLS: ${redisUseTLS}`);
 
     try {
       const socketConfig = {
@@ -46,17 +46,17 @@ class RedisService {
       });
 
       this.client.on('connect', () => {
-        console.log('[REDIS] Redis client connected');
+        //console.log('[REDIS] Redis client connected');
       });
 
       this.client.on('ready', () => {
-        console.log('[REDIS] Redis client ready');
+        //console.log('[REDIS] Redis client ready');
         this.connected = true;
         this.connectionAttempts = 0;
       });
 
       this.client.on('end', () => {
-        console.log('[REDIS] Redis client disconnected');
+        //console.log('[REDIS] Redis client disconnected');
         this.connected = false;
       });
 
@@ -65,7 +65,7 @@ class RedisService {
       
       // Test the connection
       await this.client.ping();
-      console.log('[REDIS] Redis connection established successfully');
+      //console.log('[REDIS] Redis connection established successfully');
       
       return true;
     } catch (error) {
@@ -74,7 +74,7 @@ class RedisService {
       this.connectionAttempts++;
       
       if (this.connectionAttempts < this.maxRetries) {
-        console.log(`[REDIS] Retrying connection in 5 seconds... (Attempt ${this.connectionAttempts}/${this.maxRetries})`);
+        //console.log(`[REDIS] Retrying connection in 5 seconds... (Attempt ${this.connectionAttempts}/${this.maxRetries})`);
         setTimeout(() => this.connect(), 5000);
       } else {
         console.error('[REDIS] Max connection attempts reached. Redis will be unavailable.');
@@ -127,10 +127,10 @@ class RedisService {
    */
   async disconnect() {
     if (this.client) {
-      console.log('[REDIS] Closing Redis connection...');
+      //console.log('[REDIS] Closing Redis connection...');
       try {
         await this.client.quit();
-        console.log('[REDIS] Redis connection closed gracefully');
+        //console.log('[REDIS] Redis connection closed gracefully');
       } catch (error) {
         console.error('[REDIS] Error closing Redis connection:', error.message);
         // Force close if graceful close fails

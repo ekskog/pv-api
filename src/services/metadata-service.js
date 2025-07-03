@@ -63,21 +63,21 @@ class MetadataService {
       }
 
       // Extract GPS coordinates with detailed debugging
-      console.log(`[GPS DEBUG] Checking GPS tags for ${filename}:`);
-      console.log(`[GPS DEBUG] Available GPS tags: ${Object.keys(tags).filter(k => k.startsWith('GPS')).join(', ')}`);
+      //console.log(`[GPS DEBUG] Checking GPS tags for ${filename}:`);
+      //console.log(`[GPS DEBUG] Available GPS tags: ${Object.keys(tags).filter(k => k.startsWith('GPS')).join(', ')}`);
       
       if (tags.GPSLatitude) {
-        console.log(`[GPS DEBUG] GPSLatitude found:`, tags.GPSLatitude);
-        console.log(`[GPS DEBUG] GPSLatitudeRef:`, tags.GPSLatitudeRef);
+        //console.log(`[GPS DEBUG] GPSLatitude found:`, tags.GPSLatitude);
+        //console.log(`[GPS DEBUG] GPSLatitudeRef:`, tags.GPSLatitudeRef);
       } else {
-        console.log(`[GPS DEBUG] No GPSLatitude tag found`);
+        //console.log(`[GPS DEBUG] No GPSLatitude tag found`);
       }
       
       if (tags.GPSLongitude) {
-        console.log(`[GPS DEBUG] GPSLongitude found:`, tags.GPSLongitude);
-        console.log(`[GPS DEBUG] GPSLongitudeRef:`, tags.GPSLongitudeRef);
+        //console.log(`[GPS DEBUG] GPSLongitude found:`, tags.GPSLongitude);
+        //console.log(`[GPS DEBUG] GPSLongitudeRef:`, tags.GPSLongitudeRef);
       } else {
-        console.log(`[GPS DEBUG] No GPSLongitude tag found`);
+        //console.log(`[GPS DEBUG] No GPSLongitude tag found`);
       }
 
       // Extract GPS coordinates
@@ -88,17 +88,6 @@ class MetadataService {
           exifData.gpsCoordinates = `${lat},${lon}`;
           exifData.hasExif = true;
         }
-      }
-
-      // Log extracted metadata clearly
-      console.log(`[METADATA] ✅ Extracted from ${filename}:`);
-      if (exifData.hasExif) {
-        if (exifData.dateTaken) console.log(`  📅 Date: ${exifData.dateTaken}`);
-        if (exifData.cameraMake) console.log(`  📷 Camera: ${exifData.cameraMake} ${exifData.cameraModel || ''}`);
-        if (exifData.gpsCoordinates) console.log(`  📍 GPS: ${exifData.gpsCoordinates}`);
-        if (exifData.orientation) console.log(`  🔄 Orientation: ${exifData.orientation}`);
-      } else {
-        console.log(`  ❌ No EXIF metadata found`);
       }
 
       return exifData;
@@ -172,13 +161,6 @@ class MetadataService {
         }
       }
 
-      console.log(`[METADATA] Extracted EXIF from existing file ${objectName}:`, {
-        dateTaken: exifData.dateTaken,
-        camera: exifData.cameraMake && exifData.cameraModel ? `${exifData.cameraMake} ${exifData.cameraModel}` : null,
-        hasGPS: !!exifData.gpsCoordinates,
-        orientation: exifData.orientation
-      });
-
       return exifData;
 
     } catch (error) {
@@ -207,61 +189,46 @@ class MetadataService {
    */
   parseGPSCoordinate(coordinate, ref) {
     try {
-      console.log(`[GPS DEBUG] parseGPSCoordinate called with:`, { coordinate, ref });
       
       if (coordinate.description === undefined) {
-        console.log(`[GPS DEBUG] No description found in coordinate:`, coordinate);
         return null;
       }
-      
-      console.log(`[GPS DEBUG] Coordinate description:`, coordinate.description, typeof coordinate.description);
-      
+            
       let decimal;
       
       // Check if description is already a decimal number
       if (typeof coordinate.description === 'number') {
         decimal = coordinate.description;
-        console.log(`[GPS DEBUG] Using pre-calculated decimal: ${decimal}`);
       } else if (typeof coordinate.description === 'string') {
         // Try to parse as string (format: "degrees,minutes,seconds" or already decimal)
         if (coordinate.description.includes(',')) {
           const coords = coordinate.description.split(',').map(c => parseFloat(c.trim()));
-          console.log(`[GPS DEBUG] Parsed coordinate parts:`, coords);
           
           if (coords.length !== 3) {
-            console.log(`[GPS DEBUG] Expected 3 coordinate parts, got ${coords.length}`);
             return null;
           }
           
           decimal = coords[0] + coords[1]/60 + coords[2]/3600;
-          console.log(`[GPS DEBUG] Calculated decimal from DMS: ${decimal}`);
         } else {
           // Try to parse as already decimal string
           decimal = parseFloat(coordinate.description);
-          console.log(`[GPS DEBUG] Parsed decimal from string: ${decimal}`);
         }
       } else {
-        console.log(`[GPS DEBUG] Unexpected coordinate description type: ${typeof coordinate.description}`);
         return null;
       }
       
       if (isNaN(decimal)) {
-        console.log(`[GPS DEBUG] Invalid decimal value: ${decimal}`);
         return null;
       }
       
-      console.log(`[GPS DEBUG] Decimal before applying reference: ${decimal}`);
       
       // Apply hemisphere reference
       if (ref && (ref.includes('S') || ref.includes('W') || ref === 'S' || ref === 'W')) {
         decimal = -decimal;
-        console.log(`[GPS DEBUG] Applied ${ref} reference, final decimal: ${decimal}`);
       }
       
-      console.log(`[GPS DEBUG] ✅ Final coordinate value: ${decimal}`);
       return decimal;
     } catch (error) {
-      console.log(`[GPS DEBUG] Error parsing GPS coordinate:`, error);
       return null;
     }
   }
@@ -275,7 +242,6 @@ class MetadataService {
    */
   async updateFolderMetadata(bucketName, objectName, extractedExifData, uploadInfo) {
     try {
-      console.log(`[METADATA] Updating folder metadata for: ${objectName}`);
       
       const folderName = this.getFolderName(objectName);
       const jsonFileName = `${folderName}/${folderName}.json`;
@@ -303,7 +269,6 @@ class MetadataService {
       // Check if folder JSON file already exists
       let folderMetadataJson;
       try {
-        console.log(`[METADATA] Checking for existing JSON file: ${jsonFileName}`);
         const stream = await this.minioClient.getObject(bucketName, jsonFileName);
         const chunks = [];
         for await (const chunk of stream) {
@@ -317,11 +282,9 @@ class MetadataService {
         folderMetadataJson.totalImages = folderMetadataJson.images.length;
         folderMetadataJson.lastUpdated = new Date().toISOString();
         
-        console.log(`[METADATA] Updated existing JSON file with new image. Total images: ${folderMetadataJson.totalImages}`);
         
       } catch (error) {
         // JSON file doesn't exist, create new one
-        console.log(`[METADATA] Creating new JSON file for folder: ${folderName}`);
         folderMetadataJson = {
           folderName: folderName,
           generatedAt: new Date().toISOString(),
@@ -347,16 +310,10 @@ class MetadataService {
           'X-Amz-Meta-Last-Updated': new Date().toISOString()
         }
       );
-
-      console.log(`[METADATA] Successfully updated folder metadata file: ${jsonFileName} (${folderMetadataJson.totalImages} images)`);
-      
-      // Log the complete updated JSON structure for debugging
-      console.log(`[METADATA] 📄 Updated JSON file content:`, JSON.stringify(folderMetadataJson, null, 2));
       
       return true;
 
     } catch (error) {
-      console.error(`[METADATA] Failed to update folder metadata for ${objectName}:`, error.message);
       // Don't fail the upload if metadata update fails
       return false;
     }
@@ -437,7 +394,7 @@ class MetadataService {
         newMetadata          // new metadata
       );
       
-      console.log(`[METADATA] Successfully updated object metadata for ${objectName}`);
+      //console.log(`[METADATA] Successfully updated object metadata for ${objectName}`);
       return true;
     } catch (error) {
       console.error(`[METADATA] Failed to update object metadata for ${objectName}: ${error.message}`);
@@ -479,11 +436,11 @@ class MetadataService {
    */
   async processExistingImage(bucketName, objectName, objectStat) {
     try {
-      console.log(`[METADATA] Processing existing image: ${objectName}...`);
+      //console.log(`[METADATA] Processing existing image: ${objectName}...`);
 
       // Check if already processed
       if (this.hasExifMetadata(objectStat)) {
-        console.log(`[METADATA] ${objectName} already has EXIF metadata`);
+        //console.log(`[METADATA] ${objectName} already has EXIF metadata`);
         return { skipped: true };
       }
 
@@ -510,7 +467,7 @@ class MetadataService {
   async getImageObjects(bucketName, prefix = '') {
     const objects = [];
     
-    console.log(`[METADATA] Scanning bucket '${bucketName}' with prefix '${prefix}'...`);
+    //console.log(`[METADATA] Scanning bucket '${bucketName}' with prefix '${prefix}'...`);
     
     const stream = this.minioClient.listObjects(bucketName, prefix, true);
     
@@ -520,7 +477,7 @@ class MetadataService {
       }
     }
     
-    console.log(`[METADATA] Found ${objects.length} image files`);
+    //console.log(`[METADATA] Found ${objects.length} image files`);
     return objects;
   }
 
@@ -532,7 +489,7 @@ class MetadataService {
       const objects = await this.getImageObjects(bucketName, prefix);
       
       if (objects.length === 0) {
-        console.log('[METADATA] No image files found to process');
+        //console.log('[METADATA] No image files found to process');
         return;
       }
 
@@ -550,11 +507,11 @@ class MetadataService {
         batches.push(objects.slice(i, i + batchSize));
       }
 
-      console.log(`[METADATA] Processing ${objects.length} images in ${batches.length} batches of ${batchSize}`);
+      //console.log(`[METADATA] Processing ${objects.length} images in ${batches.length} batches of ${batchSize}`);
 
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
-        console.log(`\n[METADATA] Processing batch ${i + 1}/${batches.length} (${batch.length} files)`);
+        //console.log(`\n[METADATA] Processing batch ${i + 1}/${batches.length} (${batch.length} files)`);
 
         // Process batch in parallel
         const promises = batch.map(async (obj) => {
@@ -562,7 +519,7 @@ class MetadataService {
             const objectStat = await this.minioClient.statObject(bucketName, obj.name);
             
             if (dryRun) {
-              console.log(`[DRY-RUN] Would process ${obj.name}`);
+              //console.log(`[DRY-RUN] Would process ${obj.name}`);
               stats.updated++;
               return;
             }
@@ -589,18 +546,18 @@ class MetadataService {
 
         // Progress update
         const progress = Math.round((stats.processed / objects.length) * 100);
-        console.log(`[METADATA] ${progress}% complete (${stats.processed}/${objects.length})`);
+        //console.log(`[METADATA] ${progress}% complete (${stats.processed}/${objects.length})`);
       }
 
       // Print final stats
-      console.log('\n' + '='.repeat(50));
-      console.log('METADATA BATCH PROCESSING COMPLETE');
-      console.log('='.repeat(50));
-      console.log(`Total files found: ${stats.totalFiles}`);
-      console.log(`Files processed: ${stats.processed}`);
-      console.log(`Files updated: ${stats.updated}`);
-      console.log(`Files skipped: ${stats.skipped}`);
-      console.log(`Errors: ${stats.errors}`);
+      //console.log('\n' + '='.repeat(50));
+      //console.log('METADATA BATCH PROCESSING COMPLETE');
+      //console.log('='.repeat(50));
+      //console.log(`Total files found: ${stats.totalFiles}`);
+      //console.log(`Files processed: ${stats.processed}`);
+      //console.log(`Files updated: ${stats.updated}`);
+      //console.log(`Files skipped: ${stats.skipped}`);
+      //console.log(`Errors: ${stats.errors}`);
       
       if (dryRun) {
         console.log('\n⚠️  DRY RUN MODE - No changes were made');

@@ -34,7 +34,7 @@ class JobService {
         JSON.stringify(job)
       );
       
-      console.log(`[JOB] Created job ${jobId} with status: ${job.status}`);
+      //console.log(`[JOB] Created job ${jobId} with status: ${job.status}`);
       return job;
     } catch (error) {
       console.error(`[JOB] Failed to create job:`, error.message);
@@ -61,7 +61,7 @@ class JobService {
       }
 
       const job = JSON.parse(jobData);
-      //console.log(`[JOB] Retrieved job ${jobId} with status: ${job.status}`);
+      ////console.log(`[JOB] Retrieved job ${jobId} with status: ${job.status}`);
       return job;
     } catch (error) {
       console.error(`[JOB] Failed to get job ${jobId}:`, error.message);
@@ -101,7 +101,7 @@ class JobService {
         JSON.stringify(updatedJob)
       );
 
-      console.log(`[JOB] Updated job ${jobId}: ${existingJob.status} -> ${updatedJob.status}`);
+      //console.log(`[JOB] Updated job ${jobId}: ${existingJob.status} -> ${updatedJob.status}`);
       return updatedJob;
     } catch (error) {
       console.error(`[JOB] Failed to update job ${jobId}:`, error.message);
@@ -123,7 +123,7 @@ class JobService {
       const client = redisService.getClient();
       const deleted = await client.del(`${this.keyPrefix}${jobId}`);
       
-      console.log(`[JOB] ${deleted ? 'Deleted' : 'Not found'} job ${jobId}`);
+      //console.log(`[JOB] ${deleted ? 'Deleted' : 'Not found'} job ${jobId}`);
       return deleted > 0;
     } catch (error) {
       console.error(`[JOB] Failed to delete job ${jobId}:`, error.message);
