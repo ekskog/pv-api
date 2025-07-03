@@ -69,6 +69,14 @@ const minioClient = new Client({
   secretKey: process.env.MINIO_SECRET_KEY
 })
 
+console.log('🔧 MinIO Configuration:', {
+  endPoint: process.env.MINIO_ENDPOINT,
+  port: process.env.MINIO_PORT,
+  useSSL: process.env.MINIO_USE_SSL,
+  accessKey: process.env.MINIO_ACCESS_KEY ? `${process.env.MINIO_ACCESS_KEY.substring(0, 4)}***` : 'NOT_SET',
+  secretKeySet: !!process.env.MINIO_SECRET_KEY
+})
+
 // Initialize Upload Service
 const uploadService = new UploadService(minioClient)
 
@@ -677,6 +685,106 @@ app.get('/buckets/:bucketName/download', async (req, res) => {
   }
 })
 
+// DELETE /buckets/:bucketName/objects - Delete a specific object (Admin only)
+app.delete('/buckets/:bucketName/objects', authenticateToken, requireRole('admin'), async (req, res) => {
+  console.log('🗑️ DELETE API called with:', { bucketName: req.params.bucketName, objectName: req.body.objectName })
+  try {
+    const { bucketName } = req.params
+    const { objectName } = req.body
+
+    console.log('🗑️ Attempting to delete:', objectName, 'from bucket:', bucketName)
+
+    if (!objectName) {
+      console.log('🗑️ Error: Object name is required')
+      return res.status(400).json({
+        success: false,
+        error: 'Object name is required'
+      })
+    }
+
+    // Check if bucket exists
+    console.log('🗑️ Checking if bucket exists:', bucketName)
+    const bucketExists = await minioClient.bucketExists(bucketName)
+    if (!bucketExists) {
+      console.log('🗑️ Error: Bucket not found:', bucketName)
+      return res.status(404).json({
+        success: false,
+        error: 'Bucket not found'
+      })
+    }
+
+    // Check if object exists
+    console.log('🗑️ Checking if object exists:', objectName)
+    try {
+      await minioClient.statObject(bucketName, objectName)
+      console.log('🗑️ Object found, proceeding with deletion')
+    } catch (error) {
+      if (error.code === 'NotFound') {
+        console.log('🗑️ Error: Object not found:', objectName)
+        return res.status(404).json({
+          success: false,
+          error: 'Object not found'
+        })
+      }
+      console.log('🗑️ Error checking object:', error.message)
+      throw error
+    }
+
+    // Delete the object
+    console.log('🗑️ Calling minioClient.removeObject...')
+    try {
+      const result = await minioClient.removeObject(bucketName, objectName)
+      console.log('🗑️ removeObject result:', result)
+    } catch (removeError) {
+      console.log('🗑️ removeObject error:', removeError)
+      throw removeError
+    }
+    console.log('🗑️ Object deleted successfully from MinIO')
+
+    // NFS backend requires longer wait for cache consistency
+    console.log('🗑️ Waiting for NFS cache refresh (10 seconds)...')
+    await new Promise(resolve => setTimeout(resolve, 10000))
+
+    // Verify deletion with retry logic for NFS caching
+    let attempts = 0
+    let objectExists = true
+    while (objectExists && attempts < 3) {
+      try {
+        await minioClient.statObject(bucketName, objectName)
+        console.log(`🗑️ Attempt ${attempts + 1}: Object still exists (NFS cache?)`)
+        if (attempts < 2) {
+          await new Promise(resolve => setTimeout(resolve, 5000))
+        }
+        attempts++
+      } catch (error) {
+        if (error.code === 'NotFound') {
+          console.log('🗑️ VERIFIED: Object successfully deleted')
+          objectExists = false
+        } else {
+          console.log('🗑️ Error verifying deletion:', error.message)
+          break
+        }
+      }
+    }
+
+    if (objectExists) {
+      console.log('🗑️ WARNING: Object may still exist due to NFS caching, but deletion was requested')
+    }
+
+    res.json({
+      success: true,
+      message: `Object '${objectName}' deleted successfully`
+    })
+
+  } catch (error) {
+    console.log('🗑️ DELETE API error:', error.message)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
 // Supported file types endpoint
 app.get('/supported-formats', (req, res) => {
   res.json({
@@ -710,11 +818,49 @@ async function processFilesInBackground(jobId, files, bucketName, folderPath, up
     // Update job status to 'processing'
     await jobService.updateJobStatus(jobId, { 
       status: 'processing',
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      progress: { processed: 0, total: files.length },
+      results: [],
+      errors: []
     });
 
-    // Process files
-    const { results: uploadResults, errors } = await uploadService.processMultipleFiles(files, bucketName, folderPath)
+    // Process files individually with progress updates
+    const allResults = [];
+    const errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      //console.log(`[BACKGROUND] Processing file ${i + 1}/${files.length}: ${file.originalname}`)
+      
+      try {
+        const results = await uploadService.processAndUploadFile(file, bucketName, folderPath);
+        allResults.push(...results);
+        
+        // Update job progress after each file completes
+        await jobService.updateJobStatus(jobId, {
+          status: 'processing',
+          progress: { processed: i + 1, total: files.length },
+          results: allResults,
+          errors: errors.length > 0 ? errors : undefined
+        });
+        
+        //console.log(`[BACKGROUND] File ${i + 1}/${files.length} completed: ${file.originalname}`)
+      } catch (error) {
+        console.error(`[BACKGROUND] Failed to process file ${i + 1}/${files.length}: ${file.originalname}`, error.message)
+        errors.push({
+          filename: file.originalname,
+          error: error.message
+        });
+        
+        // Update job progress even for failed files
+        await jobService.updateJobStatus(jobId, {
+          status: 'processing',
+          progress: { processed: i + 1, total: files.length },
+          results: allResults,
+          errors: errors
+        });
+      }
+    }
 
     const processingTime = Date.now() - startTime
     //console.log(`[BACKGROUND] Job ${jobId} processing complete in ${processingTime}ms`)
@@ -723,9 +869,9 @@ async function processFilesInBackground(jobId, files, bucketName, folderPath, up
     const finalStatus = errors.length === 0 ? 'completed' : 'failed';
     await jobService.updateJobStatus(jobId, {
       status: finalStatus,
-      progress: { processed: uploadResults.length, total: files.length },
+      progress: { processed: files.length, total: files.length },
       completedAt: new Date().toISOString(),
-      results: uploadResults,
+      results: allResults,
       errors: errors.length > 0 ? errors : undefined
     });
     

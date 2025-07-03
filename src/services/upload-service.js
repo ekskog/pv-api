@@ -135,6 +135,8 @@ class UploadService {
     console.time(imageTimer);
     console.log(`[IMAGE_PROCESS] Starting image processing for: ${file.originalname} using microservice`)
     
+    const uploadResults = []; // Initialize uploadResults array
+    
     // Check file size limit to prevent memory issues
     const maxSizeMB = 100; // 100MB limit
 
