@@ -2,8 +2,13 @@
 
 class AvifConverterService {
   constructor() {
-    this.baseUrl = process.env.AVIF_CONVERTER_URL || 'http://localhost:3000';
+    this.baseUrl = process.env.AVIF_CONVERTER_URL;
     this.timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT) || 300000; // 5 minutes default
+    
+    if (!this.baseUrl) {
+      console.error('[AVIF_CONVERTER] CRITICAL ERROR: AVIF_CONVERTER_URL environment variable not set!');
+      throw new Error('AVIF_CONVERTER_URL environment variable is required');
+    }
   }
 
   /**

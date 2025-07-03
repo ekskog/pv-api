@@ -51,12 +51,24 @@ class UploadService {
     console.log(`[UPLOAD] Processing file: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`)
     console.log(`[UPLOAD] Memory before processing: ${(memBefore.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memBefore.rss / 1024 / 1024).toFixed(2)}MB RSS`)
     
+    // DEBUG: Add extensive debugging for mobile upload issues
+    console.log(`[UPLOAD] DETAILED FILE INFO:`, {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      bufferLength: file.buffer ? file.buffer.length : 'NO BUFFER',
+      bufferType: file.buffer ? typeof file.buffer : 'NO BUFFER',
+      fieldname: file.fieldname,
+      encoding: file.encoding
+    });
+    
     const uploadResults = [];
     const isHeic = UploadService.isHEICFile(file.originalname);
     const isImage = UploadService.isImageFile(file.originalname);
     const isVideo = UploadService.isVideoFile(file.originalname);
     
     console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}, Video: ${isVideo}`)
+    console.log(`[UPLOAD] PROCESSING PATH: ${isHeic ? 'HEIC' : isImage ? 'IMAGE' : isVideo ? 'VIDEO' : 'REGULAR'}`)
     
     // Extract EXIF metadata from original file buffer (before conversion)
     let extractedMetadata = null;
@@ -101,19 +113,8 @@ class UploadService {
     } catch (error) {
       console.error(`[UPLOAD] Error processing file ${file.originalname}:`, error.message)
       
-      // If it's a timeout or processing error, try fallback upload
-      if (error.message.includes('timeout') || error.message.includes('processing')) {
-        console.log(`[UPLOAD] Attempting fallback upload for: ${file.originalname}`)
-        try {
-          const fallbackResults = await this.uploadRegularFile(file, bucketName, folderPath);
-          
-          return fallbackResults;
-        } catch (fallbackError) {
-          console.error(`[UPLOAD] Fallback upload also failed for ${file.originalname}:`, fallbackError.message)
-          throw error; // throw original error
-        }
-      }
-      
+      // NO FALLBACK - If AVIF conversion fails, fail the entire upload
+      console.log(`[UPLOAD] AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`)
       throw error;
     } finally {
       // Log memory usage after processing
@@ -134,6 +135,13 @@ class UploadService {
     const imageTimer = `Image-processing-${file.originalname}`;
     console.time(imageTimer);
     console.log(`[IMAGE_PROCESS] Starting image processing for: ${file.originalname} using microservice`)
+    console.log(`[IMAGE_PROCESS] MOBILE DEBUG - File details:`, {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      bufferLength: file.buffer ? file.buffer.length : 'NO BUFFER',
+      encoding: file.encoding
+    });
     
     const uploadResults = []; // Initialize uploadResults array
     
@@ -143,12 +151,20 @@ class UploadService {
     try {
       // Use microservice for conversion
       console.log(`[IMAGE_PROCESS] Converting image file using avif-converter microservice: ${file.originalname}`)
+      console.log(`[IMAGE_PROCESS] MOBILE DEBUG - About to check microservice availability...`)
       
       // Check if microservice is available
       const isAvailable = await this.avifConverter.isAvailable();
+      console.log(`[IMAGE_PROCESS] MOBILE DEBUG - Microservice available: ${isAvailable}`)
       if (!isAvailable) {
         throw new Error('AVIF converter microservice is not available');
       }
+      
+      console.log(`[IMAGE_PROCESS] MOBILE DEBUG - Calling microservice conversion with:`, {
+        bufferLength: file.buffer.length,
+        originalname: file.originalname,
+        mimetype: file.mimetype
+      });
       
       // Convert using microservice
       const conversionResult = await this.avifConverter.convertImage(
@@ -156,6 +172,14 @@ class UploadService {
         file.originalname, 
         file.mimetype
       );
+      
+      console.log(`[IMAGE_PROCESS] MOBILE DEBUG - Conversion result:`, {
+        success: conversionResult.success,
+        hasData: !!conversionResult.data,
+        hasFiles: !!(conversionResult.data && conversionResult.data.files),
+        filesCount: conversionResult.data && conversionResult.data.files ? conversionResult.data.files.length : 0,
+        error: conversionResult.error || 'none'
+      });
       
       if (!conversionResult.success) {
         throw new Error(`Microservice conversion failed: ${conversionResult.error}`);
@@ -171,9 +195,19 @@ class UploadService {
         const minioUploadTimer = `MinIO-upload-${variantName}-${file.originalname}`;
         console.time(minioUploadTimer);
         console.log(`[IMAGE_PROCESS] Uploading variant: ${variantName} - ${variantData.filename} (${(variantData.size / 1024).toFixed(2)}KB)`)
+        
         const variantObjectName = folderPath 
           ? `${folderPath.replace(/\/$/, '')}/${variantData.filename}`
           : variantData.filename;
+
+        // DEBUG: Log the object name being sent to MinIO
+        console.log(`[IMAGE_PROCESS] MinIO putObject params for variant:`, {
+          bucket: bucketName,
+          objectName: variantObjectName,
+          bufferSize: variantData.buffer ? variantData.buffer.length : 'no buffer',
+          sizeParam: variantData.size,
+          mimetype: variantData.mimetype
+        });
 
         const uploadInfo = await this.minioClient.putObject(
           bucketName, 
@@ -208,9 +242,16 @@ class UploadService {
     } catch (error) {
       console.timeEnd(imageTimer);
       console.error(`[IMAGE_PROCESS] Image processing failed for ${file.originalname}:`, error.message);
-      console.log(`[IMAGE_PROCESS] Falling back to regular file upload for: ${file.originalname}`)
-      // Fallback: upload original file if processing fails
-      return await this.uploadRegularFile(file, bucketName, folderPath);
+      console.error(`[IMAGE_PROCESS] MOBILE DEBUG - Full error details:`, {
+        errorMessage: error.message,
+        errorStack: error.stack,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimetype: file.mimetype
+      });
+      console.log(`[IMAGE_PROCESS] AVIF conversion failed - NOT uploading original JPEG as per requirements: ${file.originalname}`)
+      // DO NOT fallback to regular upload - fail the entire upload if AVIF conversion fails
+      throw error;
     }
   }
 
@@ -422,11 +463,30 @@ class UploadService {
     const uploadTimer = `Regular-upload-${file.originalname}`;
     console.time(uploadTimer);
     console.log(`[REGULAR_UPLOAD] Uploading regular file: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB)`)
+    
+    // DEBUG: Log all file properties to understand mobile upload differences
+    console.log(`[REGULAR_UPLOAD] File object details:`, {
+      originalname: file.originalname,
+      filename: file.filename,
+      fieldname: file.fieldname,
+      mimetype: file.mimetype,
+      size: file.size,
+      bufferLength: file.buffer ? file.buffer.length : 'no buffer',
+      encoding: file.encoding
+    });
+    
     const objectName = folderPath 
       ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
       : file.originalname;
 
-    console.log(`[REGULAR_UPLOAD] Target object name: ${objectName}`)
+    console.log(`[REGULAR_UPLOAD] Target object name: "${objectName}"`)
+    console.log(`[REGULAR_UPLOAD] MinIO putObject params:`, {
+      bucket: bucketName,
+      objectName: objectName,
+      bufferSize: file.buffer ? file.buffer.length : 'no buffer',
+      sizeParam: file.size
+    });
+    
     const uploadInfo = await this.minioClient.putObject(
       bucketName, 
       objectName, 
