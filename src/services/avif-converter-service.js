@@ -67,8 +67,8 @@ class AvifConverterService {
       // Create a Blob from the buffer with proper type
       const blob = new Blob([fileBuffer], { type: mimeType });
       
-      // Append the blob as a file with proper filename (Go service expects 'image' field)
-      formData.append('image', blob, originalName);
+      // Append the blob as a file with proper filename (Python service expects 'file' field)
+      formData.append('file', blob, originalName);
 
       console.log(`[AVIF_CONVERTER] Sending conversion request to: ${this.baseUrl}${endpoint}`);
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -82,39 +82,35 @@ class AvifConverterService {
         throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      // Go microservice returns binary AVIF data, not JSON
-      const avifBuffer = await response.arrayBuffer();
-      console.log(`[AVIF_CONVERTER] Received AVIF data: ${avifBuffer.byteLength} bytes`);
+      // Python microservice returns JSON with base64-encoded variants
+      const responseData = await response.json();
+      console.log(`[AVIF_CONVERTER] Received JSON response with ${responseData.variants?.length || 0} variants`);
 
-      // Create the base filename without extension
-      const baseName = originalName.replace(/\.[^/.]+$/, '');
-      
-      // Create full-size variant from the converted AVIF
-      const fullVariant = {
-        filename: `${baseName}.avif`,
-        content: Buffer.from(avifBuffer).toString('base64'),
-        size: avifBuffer.byteLength,
-        mimetype: 'image/avif',
-        variant: 'full'
-      };
+      if (!responseData.success || !responseData.variants || responseData.variants.length === 0) {
+        throw new Error('Conversion failed: No variants returned from microservice');
+      }
 
-      // For now, we'll use the same AVIF for thumbnail
-      // TODO: In the future, we could modify the Go service to return multiple sizes
-      const thumbnailVariant = {
-        filename: `${baseName}_thumb.avif`,
-        content: Buffer.from(avifBuffer).toString('base64'),
-        size: avifBuffer.byteLength,
-        mimetype: 'image/avif',
-        variant: 'thumbnail'
-      };
+      // Process the variants returned by the microservice
+      const files = [];
 
-      console.log(`[AVIF_CONVERTER] Conversion successful: created full and thumbnail variants for ${originalName}`);
+      for (const variant of responseData.variants) {
+        console.log(`[AVIF_CONVERTER] Processing variant: ${variant.variant} (${variant.size} bytes)`);
+        
+        // Convert to the format expected by upload service
+        files.push({
+          filename: variant.filename,
+          content: variant.content, // Already base64 encoded
+          size: variant.size,
+          mimetype: variant.mimetype,
+          variant: variant.variant
+        });
+      }
 
-      // Return data in the format expected by upload-service.js
+      console.log(`[AVIF_CONVERTER] Successfully processed ${files.length} variants`);
       return {
         success: true,
         data: {
-          files: [fullVariant, thumbnailVariant]
+          files: files
         }
       };
 

@@ -20,9 +20,6 @@ class MetadataService {
    */
   extractExifFromBuffer(imageBuffer, filename) {
     try {
-      console.log(`\n🔍 [METADATA] EXTRACTING EXIF FROM UPLOADED FILE: ${filename}`);
-      console.log('='.repeat(60));
-      
       const tags = ExifReader.load(imageBuffer);
       
       const exifData = {
@@ -65,6 +62,24 @@ class MetadataService {
         exifData.hasExif = true;
       }
 
+      // Extract GPS coordinates with detailed debugging
+      console.log(`[GPS DEBUG] Checking GPS tags for ${filename}:`);
+      console.log(`[GPS DEBUG] Available GPS tags: ${Object.keys(tags).filter(k => k.startsWith('GPS')).join(', ')}`);
+      
+      if (tags.GPSLatitude) {
+        console.log(`[GPS DEBUG] GPSLatitude found:`, tags.GPSLatitude);
+        console.log(`[GPS DEBUG] GPSLatitudeRef:`, tags.GPSLatitudeRef);
+      } else {
+        console.log(`[GPS DEBUG] No GPSLatitude tag found`);
+      }
+      
+      if (tags.GPSLongitude) {
+        console.log(`[GPS DEBUG] GPSLongitude found:`, tags.GPSLongitude);
+        console.log(`[GPS DEBUG] GPSLongitudeRef:`, tags.GPSLongitudeRef);
+      } else {
+        console.log(`[GPS DEBUG] No GPSLongitude tag found`);
+      }
+
       // Extract GPS coordinates
       if (tags.GPSLatitude && tags.GPSLongitude) {
         const lat = this.parseGPSCoordinate(tags.GPSLatitude, tags.GPSLatitudeRef?.description);
@@ -75,17 +90,16 @@ class MetadataService {
         }
       }
 
-      // **CONSOLE OUTPUT FOR TESTING**
-      console.log('📊 EXIF METADATA EXTRACTED:');
-      console.log(`   File: ${filename}`);
-      console.log(`   Size: ${exifData.fileSize}`);
-      console.log(`   Date Taken: ${exifData.dateTaken || 'Not found'}`);
-      console.log(`   Camera Make: ${exifData.cameraMake || 'Not found'}`);
-      console.log(`   Camera Model: ${exifData.cameraModel || 'Not found'}`);
-      console.log(`   GPS Coordinates: ${exifData.gpsCoordinates || 'Not found'}`);
-      console.log(`   Orientation: ${exifData.orientation || 'Not found'}`);
-      console.log(`   Has EXIF: ${exifData.hasExif}`);
-      console.log('='.repeat(60));
+      // Log extracted metadata clearly
+      console.log(`[METADATA] ✅ Extracted from ${filename}:`);
+      if (exifData.hasExif) {
+        if (exifData.dateTaken) console.log(`  📅 Date: ${exifData.dateTaken}`);
+        if (exifData.cameraMake) console.log(`  📷 Camera: ${exifData.cameraMake} ${exifData.cameraModel || ''}`);
+        if (exifData.gpsCoordinates) console.log(`  📍 GPS: ${exifData.gpsCoordinates}`);
+        if (exifData.orientation) console.log(`  🔄 Orientation: ${exifData.orientation}`);
+      } else {
+        console.log(`  ❌ No EXIF metadata found`);
+      }
 
       return exifData;
 
@@ -193,20 +207,61 @@ class MetadataService {
    */
   parseGPSCoordinate(coordinate, ref) {
     try {
-      if (!coordinate.description) return null;
+      console.log(`[GPS DEBUG] parseGPSCoordinate called with:`, { coordinate, ref });
       
-      const coords = coordinate.description.split(',').map(c => parseFloat(c.trim()));
-      if (coords.length !== 3) return null;
-      
-      let decimal = coords[0] + coords[1]/60 + coords[2]/3600;
-      
-      // Apply hemisphere reference
-      if (ref && (ref === 'S' || ref === 'W')) {
-        decimal = -decimal;
+      if (coordinate.description === undefined) {
+        console.log(`[GPS DEBUG] No description found in coordinate:`, coordinate);
+        return null;
       }
       
+      console.log(`[GPS DEBUG] Coordinate description:`, coordinate.description, typeof coordinate.description);
+      
+      let decimal;
+      
+      // Check if description is already a decimal number
+      if (typeof coordinate.description === 'number') {
+        decimal = coordinate.description;
+        console.log(`[GPS DEBUG] Using pre-calculated decimal: ${decimal}`);
+      } else if (typeof coordinate.description === 'string') {
+        // Try to parse as string (format: "degrees,minutes,seconds" or already decimal)
+        if (coordinate.description.includes(',')) {
+          const coords = coordinate.description.split(',').map(c => parseFloat(c.trim()));
+          console.log(`[GPS DEBUG] Parsed coordinate parts:`, coords);
+          
+          if (coords.length !== 3) {
+            console.log(`[GPS DEBUG] Expected 3 coordinate parts, got ${coords.length}`);
+            return null;
+          }
+          
+          decimal = coords[0] + coords[1]/60 + coords[2]/3600;
+          console.log(`[GPS DEBUG] Calculated decimal from DMS: ${decimal}`);
+        } else {
+          // Try to parse as already decimal string
+          decimal = parseFloat(coordinate.description);
+          console.log(`[GPS DEBUG] Parsed decimal from string: ${decimal}`);
+        }
+      } else {
+        console.log(`[GPS DEBUG] Unexpected coordinate description type: ${typeof coordinate.description}`);
+        return null;
+      }
+      
+      if (isNaN(decimal)) {
+        console.log(`[GPS DEBUG] Invalid decimal value: ${decimal}`);
+        return null;
+      }
+      
+      console.log(`[GPS DEBUG] Decimal before applying reference: ${decimal}`);
+      
+      // Apply hemisphere reference
+      if (ref && (ref.includes('S') || ref.includes('W') || ref === 'S' || ref === 'W')) {
+        decimal = -decimal;
+        console.log(`[GPS DEBUG] Applied ${ref} reference, final decimal: ${decimal}`);
+      }
+      
+      console.log(`[GPS DEBUG] ✅ Final coordinate value: ${decimal}`);
       return decimal;
     } catch (error) {
+      console.log(`[GPS DEBUG] Error parsing GPS coordinate:`, error);
       return null;
     }
   }
@@ -294,6 +349,10 @@ class MetadataService {
       );
 
       console.log(`[METADATA] Successfully updated folder metadata file: ${jsonFileName} (${folderMetadataJson.totalImages} images)`);
+      
+      // Log the complete updated JSON structure for debugging
+      console.log(`[METADATA] 📄 Updated JSON file content:`, JSON.stringify(folderMetadataJson, null, 2));
+      
       return true;
 
     } catch (error) {

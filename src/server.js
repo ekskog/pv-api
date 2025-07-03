@@ -483,42 +483,11 @@ app.post('/buckets/:bucketName/upload', authenticateToken, upload.array('files')
       })
     }
 
-    console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with EXIF metadata testing`)
+    console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with upload processing`)
 
-    // **FOR TESTING: EXTRACT EXIF METADATA AND EXIT IMMEDIATELY**
-    console.log('\n🧪 [TESTING MODE] EXTRACTING EXIF METADATA FROM UPLOADED FILES')
-    console.log('='.repeat(80))
-    
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      console.log(`\n📁 Processing file ${i + 1}/${files.length}: ${file.originalname}`)
-      
-      // Extract EXIF metadata using the unified metadata service
-      const exifData = metadataService.extractExifFromBuffer(file.buffer, file.originalname)
-      
-      // Log additional file information
-      console.log(`📊 File Information:`)
-      console.log(`   Original Name: ${file.originalname}`)
-      console.log(`   MIME Type: ${file.mimetype}`)
-      console.log(`   Buffer Size: ${(file.buffer.length / 1024 / 1024).toFixed(2)} MB`)
-      console.log(`   Upload Field Name: ${file.fieldname}`)
-    }
-    
-    console.log('\n🚪 [TESTING MODE] EXITING AFTER METADATA EXTRACTION - NO UPLOAD PROCESSING')
-    console.log('='.repeat(80))
-    
-    // Return test response and exit
-    return res.status(200).json({
-      success: true,
-      message: 'EXIF metadata extraction test completed',
-      data: {
-        bucket: bucketName,
-        folderPath: folderPath || '/',
-        filesProcessed: files.length,
-        testMode: true,
-        message: 'Check server console for EXIF metadata output'
-      }
-    })
+    // **TESTING MODE DISABLED - FULL UPLOAD PROCESSING ENABLED**
+    // (Previous testing code commented out - metadata extraction, AVIF conversion, 
+    //  and JSON metadata file creation will now proceed normally)
 
     // **ORIGINAL CODE BELOW - NOT EXECUTED IN TEST MODE**
 

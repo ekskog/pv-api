@@ -59,11 +59,11 @@ class UploadService {
     console.log(`[UPLOAD] File type detection - HEIC: ${isHeic}, Image: ${isImage}, Video: ${isVideo}`)
     
     // Extract EXIF metadata from original file buffer (before conversion)
-    // let extractedMetadata = null;
-    // if (isHeic || isImage) {
-    //   console.log(`[UPLOAD] Extracting EXIF metadata from original file: ${file.originalname}`);
-    //   extractedMetadata = this.extractExifFromBuffer(file.buffer, file.originalname);
-    // }
+    let extractedMetadata = null;
+    if (isHeic || isImage) {
+      console.log(`[UPLOAD] Extracting EXIF metadata from original file: ${file.originalname}`);
+      extractedMetadata = this.metadataService.extractExifFromBuffer(file.buffer, file.originalname);
+    }
     
     try {
       // Add overall timeout for file processing
@@ -84,11 +84,11 @@ class UploadService {
         }
 
         // Update JSON metadata with already extracted data (non-blocking)
-        // if ((isHeic || isImage) && uploadResults && uploadResults.length > 0 && extractedMetadata) {
-        //   this.updateJsonMetadataAsync(bucketName, uploadResults, extractedMetadata, file.originalname).catch(error => {
-        //     console.error(`[METADATA] Failed to update JSON metadata for ${file.originalname}:`, error.message);
-        //   });
-        // }
+        if ((isHeic || isImage) && uploadResults && uploadResults.length > 0 && extractedMetadata) {
+          this.updateJsonMetadataAsync(bucketName, uploadResults, extractedMetadata, file.originalname).catch(error => {
+            console.error(`[METADATA] Failed to update JSON metadata for ${file.originalname}:`, error.message);
+          });
+        }
 
         return uploadResults;
       })();
@@ -491,12 +491,10 @@ class UploadService {
    * @param {Object} extractedMetadata - Already extracted EXIF metadata
    * @param {string} originalFilename - Original filename for logging
    */
-  /*
   async updateJsonMetadataAsync(bucketName, uploadResults, extractedMetadata, originalFilename) {
     try {
       // Only update metadata for full-size images (not thumbnails)
       const fullSizeUploads = uploadResults.filter(result => 
-        this.folderMetadata.isFullSizeImage(result.objectName) && 
         !result.variant?.includes('thumb')
       );
 
@@ -510,29 +508,25 @@ class UploadService {
         try {
           console.log(`[METADATA] Updating JSON metadata for ${uploadResult.objectName} using pre-extracted EXIF data`);
           
-          // Use the folder metadata service to update the JSON file with extracted data
-          await this.folderMetadata.updateFolderMetadataWithExif(
+          // Use the metadata service to update the JSON file with extracted data
+          await this.metadataService.updateFolderMetadata(
             bucketName,
             uploadResult.objectName,
             extractedMetadata,
-            uploadResult,
-            originalFilename
+            uploadResult
           );
           
           console.log(`[METADATA] Successfully updated JSON metadata for ${uploadResult.objectName}`);
           
-        } catch (metadataError) {
-          console.error(`[METADATA] Failed to update JSON metadata for ${uploadResult.objectName}:`, metadataError.message);
-          // Continue with other files even if one fails
+        } catch (error) {
+          console.error(`[METADATA] Failed to update JSON metadata for ${uploadResult.objectName}:`, error.message);
         }
       }
-
+      
     } catch (error) {
-      console.error(`[METADATA] Failed to update JSON metadata for ${originalFilename}:`, error.message);
-      // Don't fail the upload if metadata update fails
+      console.error(`[METADATA] Error in updateJsonMetadataAsync for ${originalFilename}:`, error.message);
     }
   }
-  */
 
   /**
    * Process multiple files in batch
