@@ -262,9 +262,14 @@ console.log(">> GET /buckets/:bucketName/objects called with params:", req.param
       stream = minioClient.listObjects(bucketName, prefix, true)
       
       for await (const obj of stream) {
-        // Skip folder placeholder files from the listing
-        if (obj.name.endsWith('/.folderkeeper')) {
-          continueapt 
+        // Skip metadata JSON files from the listing
+        if (obj.name.endsWith('.json') && obj.name.includes('/')) {
+          const pathParts = obj.name.split('/')
+          const fileName = pathParts[pathParts.length - 1]
+          const folderName = pathParts[pathParts.length - 2]
+          if (fileName === `${folderName}.json`) {
+            continue
+          }
         }
         
         objects.push({
@@ -287,9 +292,14 @@ console.log(">> GET /buckets/:bucketName/objects called with params:", req.param
             type: 'folder'
           })
         } else {
-          // Skip folder placeholder files from the listing
-          if (obj.name.endsWith('/.folderkeeper')) {
-            continue
+          // Skip metadata JSON files from the listing
+          if (obj.name.endsWith('.json') && obj.name.includes('/')) {
+            const pathParts = obj.name.split('/')
+            const fileName = pathParts[pathParts.length - 1]
+            const folderName = pathParts[pathParts.length - 2]
+            if (fileName === `${folderName}.json`) {
+              continue
+            }
           }
           
           // This is a file/object
@@ -394,18 +404,26 @@ app.post('/buckets/:bucketName/folders', authenticateToken, requireRole('admin')
       })
     }
     
-    // Instead of creating an empty folder marker, create a hidden placeholder file
-    // This ensures the folder exists without creating MinIO metadata issues
-    const placeholderPath = `${normalizedPath}.folderkeeper`
-    const placeholderContent = Buffer.from(JSON.stringify({
-      type: 'folder_placeholder',
-      created: new Date().toISOString(),
-      folderName: cleanPath
-    }))
+    // Instead of creating an empty folder marker, create a metadata JSON file
+    // This serves as both the folder marker and metadata storage
+    const metadataPath = `${normalizedPath}${cleanPath}.json`
+    const initialMetadata = {
+      album: {
+        name: cleanPath,
+        created: new Date().toISOString(),
+        description: "",
+        totalPhotos: 0,
+        totalSize: 0,
+        lastModified: new Date().toISOString()
+      },
+      photos: []
+    }
     
-    await minioClient.putObject(bucketName, placeholderPath, placeholderContent, placeholderContent.length, {
+    const metadataContent = Buffer.from(JSON.stringify(initialMetadata, null, 2))
+    
+    await minioClient.putObject(bucketName, metadataPath, metadataContent, metadataContent.length, {
       'Content-Type': 'application/json',
-      'X-Amz-Meta-Type': 'folder-placeholder'
+      'X-Amz-Meta-Type': 'album-metadata'
     })
 
     res.status(201).json({
