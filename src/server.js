@@ -778,6 +778,10 @@ app.delete('/buckets/:bucketName/objects', authenticateToken, requireRole('admin
 
     res.json({
       success: true,
+      message: `Object '${objectName}' deleted successfully`
+    })
+  } catch (error) {
+    console.error(`[DELETE] Error during deletion: ${error.message}`)
     res.status(500).json({
       success: false,
       error: error.message
