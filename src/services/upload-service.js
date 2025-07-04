@@ -154,7 +154,7 @@ class UploadService {
       console.log(`[IMAGE_PROCESS] MOBILE DEBUG - About to check microservice availability...`)
       
       // Check if microservice is available
-      const isAvailable = await this.avifConverter.isAvailable();
+      const isAvailable = await this.avifConverter.isAvailable(file.originalname);
       console.log(`[IMAGE_PROCESS] MOBILE DEBUG - Microservice available: ${isAvailable}`)
       if (!isAvailable) {
         throw new Error('AVIF converter microservice is not available');
@@ -269,7 +269,7 @@ class UploadService {
       console.log(`[HEIC_PROCESS] Converting HEIC file using avif-converter microservice: ${file.originalname}`)
       
       // Check if microservice is available
-      const isAvailable = await this.avifConverter.isAvailable();
+      const isAvailable = await this.avifConverter.isAvailable(file.originalname);
       if (!isAvailable) {
         throw new Error('AVIF converter microservice is not available');
       }
