@@ -5,10 +5,19 @@ class AvifConverterService {
     this.baseUrl = process.env.AVIF_CONVERTER_URL;
     this.timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT) || 300000; // 5 minutes default
     
+    // New JPEG2AVIF microservice configuration
+    this.jpeg2avifUrl = process.env.JPEG2AVIF_CONVERTER_URL;
+    this.jpeg2avifTimeout = parseInt(process.env.JPEG2AVIF_CONVERTER_TIMEOUT) || 300000;
+    
     if (!this.baseUrl) {
       console.error('[AVIF_CONVERTER] CRITICAL ERROR: AVIF_CONVERTER_URL environment variable not set!');
       throw new Error('AVIF_CONVERTER_URL environment variable is required');
     }
+    
+    // Log configuration
+    console.log(`[AVIF_CONVERTER] Configured services:`);
+    console.log(`  - HEIC converter: ${this.baseUrl}`);
+    console.log(`  - JPEG converter: ${this.jpeg2avifUrl || 'Not configured (will use HEIC converter)'}`);
   }
 
   /**
@@ -44,6 +53,60 @@ class AvifConverterService {
   }
 
   /**
+   * Check if the JPEG2AVIF converter microservice is healthy
+   * @returns {Object} Health check result
+   */
+  async checkJpeg2AvifHealth() {
+    if (!this.jpeg2avifUrl) {
+      return {
+        success: false,
+        error: 'JPEG2AVIF service not configured'
+      };
+    }
+
+    try {
+      console.log(`[AVIF_CONVERTER] Checking JPEG2AVIF health at: ${this.jpeg2avifUrl}/health`);
+      const response = await fetch(`${this.jpeg2avifUrl}/health`, {
+        method: 'GET',
+        timeout: 5000 // 5 second timeout for health checks
+      });
+      
+      if (!response.ok) {
+        throw new Error(`JPEG2AVIF health check failed: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`[AVIF_CONVERTER] JPEG2AVIF health check successful:`, data);
+      
+      return {
+        success: true,
+        data: data
+      };
+    } catch (error) {
+      console.error(`[AVIF_CONVERTER] JPEG2AVIF health check failed:`, error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Check health of both services
+   * @returns {Object} Combined health check result
+   */
+  async checkAllServicesHealth() {
+    const heicHealth = await this.checkHealth();
+    const jpegHealth = await this.checkJpeg2AvifHealth();
+    
+    return {
+      heicConverter: heicHealth,
+      jpegConverter: jpegHealth,
+      overallStatus: heicHealth.success && (jpegHealth.success || !this.jpeg2avifUrl) ? 'healthy' : 'degraded'
+    };
+  }
+
+  /**
    * Convert an image file to AVIF using the microservice
    * @param {Buffer} fileBuffer - Image file buffer
    * @param {string} originalName - Original filename
@@ -63,6 +126,27 @@ class AvifConverterService {
         throw new Error(`Unsupported file type for AVIF conversion: ${originalName}`);
       }
       
+      // Determine which service to use based on file type
+      let serviceUrl, serviceTimeout, serviceName;
+      
+      if (isJPEG && this.jpeg2avifUrl) {
+        // Use the new memory-efficient JPEG2AVIF microservice for JPEG files
+        serviceUrl = this.jpeg2avifUrl;
+        serviceTimeout = this.jpeg2avifTimeout;
+        serviceName = 'JPEG2AVIF';
+        console.log(`[AVIF_CONVERTER] Using JPEG2AVIF microservice for ${originalName}`);
+      } else {
+        // Use the existing HEIC converter for HEIC files or fallback for JPEG
+        serviceUrl = this.baseUrl;
+        serviceTimeout = this.timeout;
+        serviceName = 'HEIC_CONVERTER';
+        if (isJPEG) {
+          console.log(`[AVIF_CONVERTER] JPEG2AVIF service not configured, falling back to HEIC converter for ${originalName}`);
+        } else {
+          console.log(`[AVIF_CONVERTER] Using HEIC converter for ${originalName}`);
+        }
+      }
+      
       // Use single endpoint for all supported formats
       const endpoint = '/convert';
       
@@ -72,43 +156,79 @@ class AvifConverterService {
       // Create a Blob from the buffer with proper type
       const blob = new Blob([fileBuffer], { type: mimeType });
       
-      // Append the blob as a file with proper filename (Python service expects 'file' field)
-      formData.append('file', blob, originalName);
+      // Append the blob as a file with proper filename
+      // Note: JPEG2AVIF service expects 'image' field, HEIC service expects 'file' field
+      const fieldName = serviceName === 'JPEG2AVIF' ? 'image' : 'file';
+      formData.append(fieldName, blob, originalName);
 
-      //console.log(`[AVIF_CONVERTER] Sending conversion request to: ${this.baseUrl}${endpoint}`);
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      console.log(`[AVIF_CONVERTER] Sending conversion request to ${serviceName}: ${serviceUrl}${endpoint}`);
+      const response = await fetch(`${serviceUrl}${endpoint}`, {
         method: 'POST',
         body: formData,
-        timeout: this.timeout
+        timeout: serviceTimeout
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`Conversion failed (${serviceName}): ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      // Python microservice returns JSON with base64-encoded variants
+      // Both microservices return JSON with base64-encoded variants
       const responseData = await response.json();
-      //console.log(`[AVIF_CONVERTER] Received JSON response with ${responseData.variants?.length || 0} variants`);
+      console.log(`[AVIF_CONVERTER] ${serviceName} response received for ${originalName}`);
 
-      if (!responseData.success || !responseData.variants || responseData.variants.length === 0) {
-        throw new Error('Conversion failed: No variants returned from microservice');
+      if (!responseData.success) {
+        throw new Error(`Conversion failed (${serviceName}): ${responseData.error || 'Unknown error'}`);
       }
 
       // Process the variants returned by the microservice
       const files = [];
 
-      for (const variant of responseData.variants) {
-        //console.log(`[AVIF_CONVERTER] Processing variant: ${variant.variant} (${variant.size} bytes)`);
+      if (serviceName === 'JPEG2AVIF') {
+        // Handle JPEG2AVIF microservice response format
+        if (!responseData.thumbnail || !responseData.fullSize) {
+          throw new Error(`Conversion failed (${serviceName}): Missing thumbnail or fullSize in response`);
+        }
+
+        // Generate filenames based on original name
+        const baseName = originalName.replace(/\.(jpg|jpeg)$/i, '');
         
-        // Convert to the format expected by upload service
+        // Process thumbnail
         files.push({
-          filename: variant.filename,
-          content: variant.content, // Already base64 encoded
-          size: variant.size,
-          mimetype: variant.mimetype,
-          variant: variant.variant
+          filename: `${baseName}_thumbnail.avif`,
+          content: responseData.thumbnail.data, // Already base64 encoded
+          size: responseData.thumbnail.size,
+          mimetype: 'image/avif',
+          variant: 'thumbnail'
         });
+
+        // Process full-size
+        files.push({
+          filename: `${baseName}_large.avif`,
+          content: responseData.fullSize.data, // Already base64 encoded
+          size: responseData.fullSize.size,
+          mimetype: 'image/avif',
+          variant: 'large'
+        });
+
+        console.log(`[AVIF_CONVERTER] ${serviceName} processed: thumbnail (${responseData.thumbnail.size}B) + full-size (${responseData.fullSize.size}B)`);
+      } else {
+        // Handle existing HEIC converter response format (variants array)
+        if (!responseData.variants || responseData.variants.length === 0) {
+          throw new Error(`Conversion failed (${serviceName}): No variants returned from microservice`);
+        }
+
+        for (const variant of responseData.variants) {
+          files.push({
+            filename: variant.filename,
+            content: variant.content, // Already base64 encoded
+            size: variant.size,
+            mimetype: variant.mimetype,
+            variant: variant.variant
+          });
+        }
+
+        console.log(`[AVIF_CONVERTER] ${serviceName} returned ${responseData.variants.length} variants for ${originalName}`);
       }
 
       //console.log(`[AVIF_CONVERTER] Successfully processed ${files.length} variants`);

@@ -77,6 +77,11 @@ console.log('🔧 MinIO Configuration:', {
   secretKeySet: !!process.env.MINIO_SECRET_KEY
 })
 
+console.log('🔧 AVIF Converter Configuration:', {
+  url: process.env.AVIF_CONVERTER_URL || 'http://localhost:3000',
+  timeout: process.env.AVIF_CONVERTER_TIMEOUT || '300000'
+})
+
 // Initialize Upload Service
 const uploadService = new UploadService(minioClient)
 
@@ -773,11 +778,6 @@ app.delete('/buckets/:bucketName/objects', authenticateToken, requireRole('admin
 
     res.json({
       success: true,
-      message: `Object '${objectName}' deleted successfully`
-    })
-
-  } catch (error) {
-    console.log('🗑️ DELETE API error:', error.message)
     res.status(500).json({
       success: false,
       error: error.message
