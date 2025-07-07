@@ -221,8 +221,9 @@ app.get("/albums", async (req, res) => {
     });
     res.json({
       success: true,
-      data: albums,
-      count: albums.length,
+      data: [...folderSet],
+      message: "Albums retrieved successfully",
+      count: folderSet.size,
     });
   } catch (error) {
     res.status(500).json({
@@ -502,8 +503,11 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
       if (file.mimetype && file.mimetype.startsWith('image/')) {
         const fullPath = folderPath ? `${folderPath}/${file.originalname}` : file.originalname;
         conversionStatus.addPending(fullPath);
+        console.log(`[CONVERSION_STATUS] Added to pending: ${fullPath}`);
       }
     });
+    
+    console.log(`[CONVERSION_STATUS] Current status - Pending: ${conversionStatus.pending.size}, Completed: ${conversionStatus.completed.size}, Failed: ${conversionStatus.failed.size}`);
     
     const { results: uploadResults, errors } =
       await uploadService.processMultipleFiles(files, bucketName, folderPath);
@@ -674,6 +678,8 @@ app.post("/conversion-complete", async (req, res) => {
 
       // Update conversion status
       conversionStatus.markCompleted(originalFilename);
+      console.log(`[CONVERSION_STATUS] Marked as completed: ${originalFilename}`);
+      console.log(`[CONVERSION_STATUS] Current status - Pending: ${conversionStatus.pending.size}, Completed: ${conversionStatus.completed.size}, Failed: ${conversionStatus.failed.size}`);
 
       // Future: Could trigger WebSocket notifications to frontend here
       // Future: Could update job status in database here
@@ -687,6 +693,8 @@ app.post("/conversion-complete", async (req, res) => {
 
       // Update conversion status
       conversionStatus.markFailed(originalFilename);
+      console.log(`[CONVERSION_STATUS] Marked as failed: ${originalFilename}`);
+      console.log(`[CONVERSION_STATUS] Current status - Pending: ${conversionStatus.pending.size}, Completed: ${conversionStatus.completed.size}, Failed: ${conversionStatus.failed.size}`);
     }
 
     // Always respond with success to acknowledge receipt
@@ -813,9 +821,12 @@ app.get("/supported-formats", (req, res) => {
 app.get("/conversion-status", (req, res) => {
   const { album, filename } = req.query;
   
+  console.log(`[CONVERSION_STATUS] Status check request - album: ${album || 'none'}, filename: ${filename || 'none'}`);
+  
   if (filename) {
     // Check specific file status
     const status = conversionStatus.getStatus(filename);
+    console.log(`[CONVERSION_STATUS] File ${filename} status: ${status}`);
     res.json({
       success: true,
       data: {
@@ -827,6 +838,7 @@ app.get("/conversion-status", (req, res) => {
   } else if (album) {
     // Check album status
     const albumStats = conversionStatus.getAlbumStatus(album);
+    console.log(`[CONVERSION_STATUS] Album ${album} stats:`, albumStats);
     res.json({
       success: true,
       data: {
@@ -837,12 +849,16 @@ app.get("/conversion-status", (req, res) => {
     });
   } else {
     // Overall status
+    const overallStats = {
+      totalPending: conversionStatus.pending.size,
+      totalCompleted: conversionStatus.completed.size,
+      totalFailed: conversionStatus.failed.size
+    };
+    console.log(`[CONVERSION_STATUS] Overall stats:`, overallStats);
     res.json({
       success: true,
       data: {
-        totalPending: conversionStatus.pending.size,
-        totalCompleted: conversionStatus.completed.size,
-        totalFailed: conversionStatus.failed.size,
+        ...overallStats,
         timestamp: new Date().toISOString()
       }
     });
@@ -860,7 +876,7 @@ async function startServer() {
     await redisService.connect();
 
     // Start HTTP server
-    const server = app.listen(PORT, () => {
+    app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || "demo";
       console.log(`\nStarting PhotoVault ${new Date()}...`)
       console.log(`PhotoVault API server running on port ${PORT}`)
@@ -873,31 +889,6 @@ async function startServer() {
         console.log('Demo users available: admin/admin123, user/user123')
       }
     });
-
-    // Initialize WebSocket server
-    const io = new Server(server, {
-      cors: {
-        origin: [
-          "https://photos.hbvu.su",
-          "http://localhost:5173",
-          "http://localhost:3000",
-        ],
-        credentials: true,
-      },
-    });
-
-    io.on("connection", (socket) => {
-      console.log(`New WebSocket connection: ${socket.id}`);
-
-      // Handle disconnection
-      socket.on("disconnect", () => {
-        console.log(`WebSocket disconnected: ${socket.id}`);
-      });
-
-      // Future: Handle other socket events here
-    });
-
-    console.log("WebSocket server initialized");
   } catch (error) {
     console.error("Failed to start server:", error.message);
     process.exit(1);
