@@ -146,7 +146,7 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       minio: {
         connected: true,
-        buckets: buckets.length,
+        albums: albums.length,
         endpoint: process.env.MINIO_ENDPOINT
       },
       redis: redisStatus
