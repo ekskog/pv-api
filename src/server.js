@@ -93,26 +93,31 @@ const metadataService = new MetadataService(minioClient);
 // Initialize AVIF Converter Service (Step 2: Test integration)
 const avifConverterService = new AvifConverterService();
 
-async function countalbums(bucketName) {
-  const folderSet = new Set();
+async function countAlbums(bucketName) {
+  return new Promise((resolve, reject) => {
+    const folderSet = new Set();
 
-  const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
+    const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
 
-  objectsStream.on("data", (obj) => {
-    const key = obj.name;
-    const topLevelPrefix = key.split("/")[0];
-    if (key.includes("/")) {
-      folderSet.add(topLevelPrefix);
-    }
-  });
+    objectsStream.on("data", (obj) => {
+      const key = obj.name;
+      const topLevelPrefix = key.split("/")[0];
+      if (key.includes("/")) {
+        folderSet.add(topLevelPrefix);
+      }
+    });
 
-  objectsStream.on("end", () => {
-    console.log(`Number of top-level folders: ${folderSet.size}`);
-    console.log([...folderSet]);
-  });
+    objectsStream.on("end", () => {
+      const albums = [...folderSet];
+      console.log(`Number of top-level folders: ${albums.length}`);
+      console.log(albums);
+      resolve(albums);
+    });
 
-  objectsStream.on("error", (err) => {
-    console.error("Error listing objects:", err);
+    objectsStream.on("error", (err) => {
+      console.error("Error listing objects:", err);
+      reject(err);
+    });
   });
 }
 // Test route
@@ -135,7 +140,7 @@ app.get("/health", async (req, res) => {
   try {
     //console.log('[HEALTH] Testing MinIO connection...')
     // Test MinIO connection by listing albums
-    const albums = await countalbums(process.env.MINIO_BUCKET_NAME);
+    const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
     console.log(
       `[HEALTH] MinIO connection successful, found ${albums.length} album`
     );
