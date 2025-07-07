@@ -192,45 +192,6 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// GET /upload/status/:jobId - Get upload job status
-app.get("/upload/status/:jobId", async (req, res) => {
-  try {
-    const { jobId } = req.params;
-
-    if (!jobService.isAvailable()) {
-      return res.status(503).json({
-        success: false,
-        error: "Job service unavailable - Redis not connected",
-      });
-    }
-
-    const job = await jobService.getJobStatus(jobId);
-
-    if (!job) {
-      return res.status(404).json({
-        success: false,
-        error: "Job not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: job,
-    });
-  } catch (error) {
-    console.error(
-      `[API] Error getting job status for ${req.params.jobId}:`,
-      error.message
-    );
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-// MinIO API Routes (Protected)
-
 // GET /albums - List all albums (public access for album browsing)
 app.get("/albums", async (req, res) => {
   try {
@@ -362,19 +323,6 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
         totalObjects: objects.length,
       },
     };
-
-    
-    debugService.server.response('GET /buckets/:bucketName/objects', {
-      success: responseData.success,
-      bucket: responseData.data.bucket,
-      prefix: responseData.data.prefix,
-      recursive: responseData.data.recursive,
-      totalObjects: responseData.data.totalObjects,
-      totalFolders: responseData.data.totalFolders,
-      objectsList: responseData.data.objects.length > 0 ? 
-        responseData.data.objects.map((obj, i) => `${i + 1}. ${obj.name} (${obj.size} bytes)`) : 
-        ['No objects found']
-    })
 
 
     res.json(responseData);
@@ -509,29 +457,28 @@ app.post(
       const { folderPath = "" } = req.body;
       const files = req.files;
 
-      /*console.log(`[UPLOAD] Upload request received:`, {
-      bucket: bucketName,
-      folder: folderPath || 'root',
-      filesCount: files ? files.length : 0,
-      user: req.user?.username || 'unknown',
-      timestamp: new Date().toISOString()
-    })*
+      console.log(`[UPLOAD] Upload request received:`, {
+        bucket: bucketName,
+        folder: folderPath,
+        filesCount: files ? files.length : 0,
+        user: req.user?.username || 'unknown',
+        timestamp: new Date().toISOString()
+      });
 
-    if (!files || files.length === 0) {
-      console.error('[UPLOAD] Upload failed: No files provided')
-      return res.status(400).json({
-        success: false,
-        error: 'No files provided'
-      })
-    }
+      if (!files || files.length === 0) {
+        console.error('[UPLOAD] Upload failed: No files provided')
+        return res.status(400).json({
+          success: false,
+          error: 'No files provided'
+        })
+      }
 
-    /*console.log('[UPLOAD] Files to upload:', files.map((file, index) => 
-      `${index + 1}. ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`
-    ))
-    */
+      console.log('[UPLOAD] Files to upload:', files.map((file, index) => 
+        `${index + 1}. ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`
+      ));
 
       // Check if bucket exists
-      //console.log(`[UPLOAD] Checking if bucket '${bucketName}' exists...`)
+      console.log(`[UPLOAD] Checking if bucket '${bucketName}' exists...`)
       const bucketExists = await minioClient.bucketExists(bucketName);
       if (!bucketExists) {
         console.error(
@@ -543,81 +490,23 @@ app.post(
         });
       }
 
-      //console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with upload processing`)
+      console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with synchronous upload processing`)
 
-      // **TESTING MODE DISABLED - FULL UPLOAD PROCESSING ENABLED**
-      // (Previous testing code commented out - metadata extraction, AVIF conversion,
-      //  and JSON metadata file creation will now proceed normally)
-
-      // **ORIGINAL CODE BELOW - NOT EXECUTED IN TEST MODE**
-
-      // **PHASE 3: FIXED Async Upload Implementation**
-      // Create job immediately and return job ID, then process in background
-      if (jobService.isAvailable()) {
-        //console.log('[UPLOAD] Creating async job for upload processing...')
-
-        const jobData = {
-          bucketName,
-          folderPath: folderPath || "",
-          userId: req.user?.id || req.user?.username || "unknown",
-          files: files.map((file) => ({
-            originalName: file.originalname,
-            size: file.size,
-            mimetype: file.mimetype,
-          })),
-          progress: { processed: 0, total: files.length },
-        };
-
-        const job = await jobService.createJob(jobData);
-        //console.log(`[UPLOAD] Created async job: ${job.id} - returning immediately`)
-
-        // **RETURN JOB ID IMMEDIATELY**
-        const quickResponse = {
-          success: true,
-          message: "Upload job created successfully",
-          data: {
-            bucket: bucketName,
-            folderPath: folderPath || "/",
-            jobId: job.id,
-            status: "queued",
-            totalFiles: files.length,
-            processingAsync: true,
-          },
-        };
-
-        //console.log(`[UPLOAD] Returning job ID immediately: ${job.id}`)
-        res.status(202).json(quickResponse); // 202 Accepted
-
-        // **PROCESS FILES IN BACKGROUND (async, non-blocking)**
-        processFilesInBackground(
-          job.id,
-          files,
-          bucketName,
-          folderPath,
-          uploadService,
-          jobService,
-          startTime
-        );
-
-        return; // Early return - response already sent
-      }
-
-      // **FALLBACK: Synchronous processing if Redis not available**
-      //console.log('[UPLOAD] Redis not available - processing synchronously')
+      // **SYNCHRONOUS PROCESSING - Simple and direct**
       const { results: uploadResults, errors } =
         await uploadService.processMultipleFiles(files, bucketName, folderPath);
 
       const processingTime = Date.now() - startTime;
-      /*console.log(`[UPLOAD] Upload processing complete in ${processingTime}ms:`, {
-      totalFilesProcessed: files.length,
-      successfulUploads: uploadResults.length,
-      failedUploads: errors.length
-    })*/
+      console.log(`[UPLOAD] Upload processing complete in ${processingTime}ms:`, {
+        totalFilesProcessed: files.length,
+        successfulUploads: uploadResults.length,
+        failedUploads: errors.length
+      });
 
       if (uploadResults.length > 0) {
-        /*console.log('[UPLOAD] Successfully uploaded files:', uploadResults.map((result, index) => 
-        `${index + 1}. ${result.objectName} (${(result.size / 1024 / 1024).toFixed(2)}MB, ${result.mimetype})`
-      ))*/
+        console.log('[UPLOAD] Successfully uploaded files:', uploadResults.map((result, index) => 
+          `${index + 1}. ${result.objectName} (${(result.size / 1024 / 1024).toFixed(2)}MB, ${result.mimetype})`
+        ));
       }
 
       if (errors.length > 0) {
@@ -629,19 +518,6 @@ app.post(
         );
       }
 
-      // Update job status to 'completed' or 'failed' if job exists
-      if (job) {
-        const finalStatus = errors.length === 0 ? "completed" : "failed";
-        await jobService.updateJobStatus(job.id, {
-          status: finalStatus,
-          progress: { processed: uploadResults.length, total: files.length },
-          completedAt: new Date().toISOString(),
-          results: uploadResults,
-          errors: errors.length > 0 ? errors : undefined,
-        });
-        //console.log(`[UPLOAD] Updated job ${job.id} status to: ${finalStatus}`)
-      }
-
       // Return results
       const response = {
         success: errors.length === 0,
@@ -651,8 +527,6 @@ app.post(
           uploaded: uploadResults,
           uploadedCount: uploadResults.length,
           totalFiles: files.length,
-          // Include job ID if async processing was used
-          jobId: job ? job.id : undefined,
         },
       };
 
@@ -664,13 +538,13 @@ app.post(
       const statusCode =
         errors.length === 0 ? 201 : uploadResults.length > 0 ? 207 : 400;
 
-      /*console.log(`[UPLOAD] Upload response:`, {
-      statusCode: statusCode,
-      success: response.success,
-      filesUploaded: `${uploadResults.length}/${files.length}`,
-      totalTime: `${Date.now() - startTime}ms`
-    })*/
-      //console.log('[UPLOAD] Upload request completed')
+      console.log(`[UPLOAD] Upload response:`, {
+        statusCode: statusCode,
+        success: response.success,
+        filesUploaded: `${uploadResults.length}/${files.length}`,
+        totalTime: `${Date.now() - startTime}ms`
+      });
+      console.log('[UPLOAD] Upload request completed')
 
       res.status(statusCode).json(response);
     } catch (error) {
@@ -788,121 +662,28 @@ app.get("/supported-formats", (req, res) => {
   });
 });
 
-// **Background Processing Function**
-async function processFilesInBackground(
-  jobId,
-  files,
-  bucketName,
-  folderPath,
-  uploadService,
-  jobService,
-  startTime
-) {
-  try {
-    //console.log(`[BACKGROUND] Starting background processing for job ${jobId}`)
-
-    // Update job status to 'processing'
-    await jobService.updateJobStatus(jobId, {
-      status: "processing",
-      startedAt: new Date().toISOString(),
-      progress: { processed: 0, total: files.length },
-      results: [],
-      errors: [],
-    });
-
-    // Process files individually with progress updates
-    const allResults = [];
-    const errors = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      //console.log(`[BACKGROUND] Processing file ${i + 1}/${files.length}: ${file.originalname}`)
-
-      try {
-        const results = await uploadService.processAndUploadFile(
-          file,
-          bucketName,
-          folderPath
-        );
-        allResults.push(...results);
-
-        // Update job progress after each file completes
-        await jobService.updateJobStatus(jobId, {
-          status: "processing",
-          progress: { processed: i + 1, total: files.length },
-          results: allResults,
-          errors: errors.length > 0 ? errors : undefined,
-        });
-
-        //console.log(`[BACKGROUND] File ${i + 1}/${files.length} completed: ${file.originalname}`)
-      } catch (error) {
-        console.error(
-          `[BACKGROUND] Failed to process file ${i + 1}/${files.length}: ${
-            file.originalname
-          }`,
-          error.message
-        );
-        errors.push({
-          filename: file.originalname,
-          error: error.message,
-        });
-
-        // Update job progress even for failed files
-        await jobService.updateJobStatus(jobId, {
-          status: "processing",
-          progress: { processed: i + 1, total: files.length },
-          results: allResults,
-          errors: errors,
-        });
-      }
-    }
-
-    const processingTime = Date.now() - startTime;
-    //console.log(`[BACKGROUND] Job ${jobId} processing complete in ${processingTime}ms`)
-
-    // Update final job status
-    const finalStatus = errors.length === 0 ? "completed" : "failed";
-    await jobService.updateJobStatus(jobId, {
-      status: finalStatus,
-      progress: { processed: files.length, total: files.length },
-      completedAt: new Date().toISOString(),
-      results: allResults,
-      errors: errors.length > 0 ? errors : undefined,
-    });
-
-    //console.log(`[BACKGROUND] Job ${jobId} finished: ${finalStatus}`)
-  } catch (error) {
-    console.error(`[BACKGROUND] Job ${jobId} failed:`, error.message);
-    await jobService.updateJobStatus(jobId, {
-      status: "failed",
-      error: error.message,
-      completedAt: new Date().toISOString(),
-    });
-  }
-}
-
 // Start server with database initialization
 async function startServer() {
   try {
     // Initialize database connection
     await initializeDatabase();
 
-    // Initialize Redis connection
-    //console.log('Initializing Redis connection...')
+    // Initialize Redis connection (still used for other features if available)
+    console.log('Initializing Redis connection...')
     await redisService.connect();
 
     // Start HTTP server
     app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || "demo";
-      //console.log(`\nStarting PhotoVault ${new Date()}...`)
-      //console.log(`PhotoVault API server running on port ${PORT}`)
-      //console.log(`Health check: http://localhost:${PORT}/health`)
-      //console.log(`Authentication: http://localhost:${PORT}/auth/status`)
-      //console.log(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
-      //console.log(`Auth Mode: ${authMode}`)
+      console.log(`\nStarting PhotoVault ${new Date()}...`)
+      console.log(`PhotoVault API server running on port ${PORT}`)
+      console.log(`Health check: http://localhost:${PORT}/health`)
+      console.log(`Authentication: http://localhost:${PORT}/auth/status`)
+      console.log(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
+      console.log(`Auth Mode: ${authMode}`)
 
       if (authMode === "demo") {
-        //console.log('Demo users available: admin/admin123, user/user123')
+        console.log('Demo users available: admin/admin123, user/user123')
       }
     });
   } catch (error) {
@@ -913,7 +694,7 @@ async function startServer() {
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  //console.log('Shutting down server...')
+  console.log('Shutting down server...')
   if (process.env.AUTH_MODE === "database") {
     await database.close();
   }

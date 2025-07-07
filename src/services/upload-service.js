@@ -1,4 +1,10 @@
-// Upload Service - Handles file uploads with HEIC processing
+// Upload Service - Handles file uploads with AVIF conversion (NO FALLBACKS)
+// 
+// IMPORTANT: This service enforces strict AVIF conversion requirements:
+// - Only successfully converted AVIF files are uploaded to MinIO
+// - If AVIF conversion fails, the original file is NOT uploaded
+// - Upload failures are properly propagated to the client
+// - No fallback mechanisms are implemented by design
 const AvifConverterService = require('./avif-converter-service');
 const MetadataService = require('./metadata-service');
 
@@ -194,7 +200,14 @@ class UploadService {
       for (const [variantName, variantData] of Object.entries(variants)) {
         const minioUploadTimer = `MinIO-upload-${variantName}-${file.originalname}`;
         console.time(minioUploadTimer);
-        console.log(`[IMAGE_PROCESS] Uploading variant: ${variantName} - ${variantData.filename} (${(variantData.size / 1024).toFixed(2)}KB)`)
+        
+        // Log size comparison between original and converted file
+        const originalSizeKB = (file.size / 1024).toFixed(2);
+        const convertedSizeKB = (variantData.size / 1024).toFixed(2);
+        const compressionRatio = ((file.size - variantData.size) / file.size * 100).toFixed(1);
+        console.log(`[SIZE_COMPARISON] ${file.originalname}: Original ${originalSizeKB}KB → AVIF ${convertedSizeKB}KB (${compressionRatio}% reduction)`);
+        
+        console.log(`[IMAGE_PROCESS] Uploading variant: ${variantName} - ${variantData.filename} (${convertedSizeKB}KB)`)
         
         const variantObjectName = folderPath 
           ? `${folderPath.replace(/\/$/, '')}/${variantData.filename}`
@@ -432,31 +445,6 @@ class UploadService {
   }
 
   /**
-   * STEP 3: Temporary method - will be removed
-   */
-  _simulateVariantsFromMicroservice(microserviceData, originalName) {
-    // For now, create dummy variants to test the upload flow
-    // In reality, we'd read the actual converted files from the microservice
-    const dummyAvifBuffer = Buffer.from('dummy avif content');
-    const baseName = originalName.replace(/\.[^/.]+$/, '');
-    
-    return {
-      full: {
-        buffer: dummyAvifBuffer,
-        filename: `${baseName}_full.avif`,
-        size: dummyAvifBuffer.length,
-        mimetype: 'image/avif'
-      },
-      thumbnail: {
-        buffer: dummyAvifBuffer,
-        filename: `${baseName}_thumbnail.avif`,
-        size: dummyAvifBuffer.length,
-        mimetype: 'image/avif'
-      }
-    };
-  }
-
-  /**
    * Upload regular (non-HEIC) file
    */
   async uploadRegularFile(file, bucketName, folderPath) {
@@ -511,40 +499,7 @@ class UploadService {
     }];
   }
 
-  /**
-   * Fallback: Upload original HEIC when processing fails
-   */
-  async uploadOriginalHeicAsFallback(file, bucketName, folderPath) {
-    console.log(`[HEIC_FALLBACK] Uploading original HEIC file as fallback: ${file.originalname}`)
-    const objectName = folderPath 
-      ? `${folderPath.replace(/\/$/, '')}/${file.originalname}`
-      : file.originalname;
 
-    console.log(`[HEIC_FALLBACK] Target object name: ${objectName}`)
-    const uploadInfo = await this.minioClient.putObject(
-      bucketName, 
-      objectName, 
-      file.buffer,
-      file.size,
-      {
-        'Content-Type': file.mimetype,
-        'X-Amz-Meta-Original-Name': file.originalname,
-        'X-Amz-Meta-Upload-Date': new Date().toISOString(),
-        'X-Amz-Meta-Heic-Processing': 'failed'
-      }
-    );
-    console.log(`[HEIC_FALLBACK] Successfully uploaded original HEIC: ${objectName} (ETag: ${uploadInfo.etag})`)
-
-    return [{
-      originalName: file.originalname,
-      objectName: objectName,
-      size: file.size,
-      mimetype: file.mimetype,
-      etag: uploadInfo.etag,
-      versionId: uploadInfo.versionId,
-      heicProcessingFailed: true
-    }];
-  }
 
   /**
    * Update JSON metadata file using already extracted EXIF data (async, non-blocking)

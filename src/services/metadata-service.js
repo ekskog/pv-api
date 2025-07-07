@@ -244,6 +244,13 @@ class MetadataService {
     try {
       
       const folderName = this.getFolderName(objectName);
+      
+      // Skip metadata update for root-level uploads (no folder structure)
+      if (!folderName) {
+        console.log(`[METADATA] Skipping folder metadata update for root-level upload: ${objectName}`);
+        return;
+      }
+      
       const jsonFileName = `${folderName}/${folderName}.json`;
       
       // Get object stats for metadata
@@ -410,7 +417,7 @@ class MetadataService {
     if (pathParts.length > 1) {
       return pathParts[0]; // First part is the folder name
     }
-    return 'root'; // Default folder name for root level uploads
+    return null; // Return null for root level uploads - no folder metadata needed
   }
 
   /**

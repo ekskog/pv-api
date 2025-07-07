@@ -10,7 +10,7 @@ data:
   # AVIF Converter Services
   AVIF_CONVERTER_URL: "http://avif-converter.webapps.svc.cluster.local:3000"
   AVIF_CONVERTER_TIMEOUT: "300000"
-  JPEG2AVIF_CONVERTER_URL: "http://jpeg2avif-js-service.webapps.svc.cluster.local:80"
+  JPEG2AVIF_CONVERTER_URL: "http://jpg2avif-py-service.webapps.svc.cluster.local:3000"
   JPEG2AVIF_CONVERTER_TIMEOUT: "300000"
   # Redis Configuration
   REDIS_HOST: "redis.data.svc.cluster.local"

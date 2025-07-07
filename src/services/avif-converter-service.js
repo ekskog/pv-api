@@ -188,33 +188,24 @@ class AvifConverterService {
       const files = [];
 
       if (serviceName === 'JPEG2AVIF') {
-        // Handle JPEG2AVIF microservice response format
-        if (!responseData.thumbnail || !responseData.fullSize) {
-          throw new Error(`Conversion failed (${serviceName}): Missing thumbnail or fullSize in response`);
+        // Handle JPEG2AVIF microservice response format (full-size only)
+        if (!responseData.fullSize) {
+          throw new Error(`Conversion failed (${serviceName}): Missing fullSize in response`);
         }
 
-        // Generate filenames based on original name
+        // Generate filename based on original name
         const baseName = originalName.replace(/\.(jpg|jpeg)$/i, '');
         
-        // Process thumbnail
+        // Process full-size only
         files.push({
-          filename: `${baseName}_thumbnail.avif`,
-          content: responseData.thumbnail.data, // Already base64 encoded
-          size: responseData.thumbnail.size,
-          mimetype: 'image/avif',
-          variant: 'thumbnail'
-        });
-
-        // Process full-size
-        files.push({
-          filename: `${baseName}_large.avif`,
+          filename: `${baseName}.avif`,
           content: responseData.fullSize.data, // Already base64 encoded
           size: responseData.fullSize.size,
           mimetype: 'image/avif',
-          variant: 'large'
+          variant: 'full'
         });
 
-        console.log(`[AVIF_CONVERTER] ${serviceName} processed: thumbnail (${responseData.thumbnail.size}B) + full-size (${responseData.fullSize.size}B)`);
+        console.log(`[AVIF_CONVERTER] ${serviceName} processed: full-size (${responseData.fullSize.size}B)`);
       } else {
         // Handle existing HEIC converter response format (variants array)
         if (!responseData.variants || responseData.variants.length === 0) {
