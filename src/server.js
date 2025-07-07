@@ -1,6 +1,4 @@
-
-//force build - 1
-// require('dotenv').config()
+require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const multer = require('multer')
@@ -80,8 +78,8 @@ console.log('🔧 MinIO Configuration:', {
 })
 
 console.log('🔧 AVIF Converter Configuration:', {
-  url: process.env.AVIF_CONVERTER_URL || 'http://localhost:3000',
-  timeout: process.env.AVIF_CONVERTER_TIMEOUT || '300000'
+  url: process.env.AVIF_CONVERTER_URL,
+  timeout: process.env.AVIF_CONVERTER_TIMEOUT
 })
 
 // Initialize Upload Service
@@ -93,6 +91,28 @@ const metadataService = new MetadataService(minioClient)
 // Initialize AVIF Converter Service (Step 2: Test integration)
 const avifConverterService = new AvifConverterService()
 
+async function countalbums(bucketName) {
+  const folderSet = new Set();
+
+  const objectsStream = minioClient.listObjectsV2(bucketName, '', true);
+
+  objectsStream.on('data', obj => {
+    const key = obj.name;
+    const topLevelPrefix = key.split('/')[0];
+    if (key.includes('/')) {
+      folderSet.add(topLevelPrefix);
+    }
+  });
+
+  objectsStream.on('end', () => {
+    console.log(`Number of top-level folders: ${folderSet.size}`);
+    console.log([...folderSet]);
+  });
+
+  objectsStream.on('error', err => {
+    console.error('Error listing objects:', err);
+  });
+}
 // Test route
 app.get('/', (req, res) => {
   const authMode = process.env.AUTH_MODE || 'demo'
@@ -113,7 +133,7 @@ app.get('/health', async (req, res) => {
   try {
     //console.log('[HEALTH] Testing MinIO connection...')
     // Test MinIO connection by listing buckets
-    const buckets = await minioClient.listBuckets()
+    const albums = await countalbums(process.env.MINIO_BUCKET_NAME)
     console.log(`[HEALTH] MinIO connection successful, found ${buckets.length} buckets`)
     
     //console.log('[HEALTH] Testing Redis connection...')
@@ -195,9 +215,28 @@ app.get('/upload/status/:jobId', async (req, res) => {
 // MinIO API Routes (Protected)
 
 // GET /buckets - List all buckets (public access for album browsing)
-app.get('/buckets', async (req, res) => {
+app.get('/albums', async (req, res) => {
   try {
-    const buckets = await minioClient.listBuckets()
+    const folderSet = new Set();
+
+  const objectsStream = minioClient.listObjectsV2('photovault', '', true);
+
+  objectsStream.on('data', obj => {
+    const key = obj.name;
+    const topLevelPrefix = key.split('/')[0];
+    if (key.includes('/')) {
+      folderSet.add(topLevelPrefix);
+    }
+  });
+
+  objectsStream.on('end', () => {
+    console.log(`Number of top-level folders: ${folderSet.size}`);
+    console.log([...folderSet]);
+  });
+
+  objectsStream.on('error', err => {
+    console.error('Error listing objects:', err);
+  });
     res.json({
       success: true,
       data: buckets,
@@ -211,46 +250,9 @@ app.get('/buckets', async (req, res) => {
   }
 })
 
-// POST /buckets - Create a new bucket (Admin only)
-app.post('/buckets', authenticateToken, requireRole('admin'), async (req, res) => {
-  try {
-    const { bucketName, region = 'us-east-1' } = req.body
-    
-    if (!bucketName) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bucket name is required'
-      })
-    }
 
-    // Check if bucket already exists
-    const bucketExists = await minioClient.bucketExists(bucketName)
-    if (bucketExists) {
-      return res.status(409).json({
-        success: false,
-        error: 'Bucket already exists'
-      })
-    }
-
-    await minioClient.makeBucket(bucketName, region)
-    res.status(201).json({
-      success: true,
-      message: `Bucket '${bucketName}' created successfully`,
-      data: { bucketName, region }
-    })
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    })
-  }
-})
-
-// GET /buckets/:bucketName/objects - List objects in a bucket (Public access for album browsing)
 app.get('/buckets/:bucketName/objects', async (req, res) => {
-  
-//console.log(">> GET /buckets/:bucketName/objects called with params:", req.params, "and query:", req.query)
-  
+    
   try {
     const { bucketName } = req.params
     const { prefix = '', recursive = 'false' } = req.query

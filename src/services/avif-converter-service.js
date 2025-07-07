@@ -26,7 +26,7 @@ class AvifConverterService {
    */
   async checkHealth() {
     try {
-      console.log(`[AVIF_CONVERTER] Checking health at: ${this.baseUrl}/health`);
+      //console.log(`[AVIF_CONVERTER] Checking health at: ${this.baseUrl}/health`);
       const response = await fetch(`${this.baseUrl}/health`, {
         method: 'GET',
         timeout: 5000 // 5 second timeout for health checks
@@ -259,19 +259,13 @@ class AvifConverterService {
   async isAvailable(originalName = '') {
     const isJPEG = /\.(jpg|jpeg)$/i.test(originalName);
     
-    console.log(`[AVIF_CONVERTER] isAvailable called for: ${originalName}, isJPEG: ${isJPEG}, jpeg2avifUrl: ${this.jpeg2avifUrl}`);
-    
     if (isJPEG && this.jpeg2avifUrl) {
       // Check JPEG2AVIF service for JPEG files
-      console.log(`[AVIF_CONVERTER] Checking JPEG2AVIF service health for JPEG file: ${originalName}`);
       const health = await this.checkJpeg2AvifHealth();
-      console.log(`[AVIF_CONVERTER] JPEG2AVIF health check result: ${health.success}`);
       return health.success;
     } else {
       // Check HEIC converter for HEIC files
-      console.log(`[AVIF_CONVERTER] Checking HEIC converter health for file: ${originalName}`);
       const health = await this.checkHealth();
-      console.log(`[AVIF_CONVERTER] HEIC converter health check result: ${health.success}`);
       return health.success;
     }
   }
