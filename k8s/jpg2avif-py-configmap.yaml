@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jpg2avif-py-config
+  namespace: webapps
+data:
+  # FastAPI configuration
+  PORT: "3000"
+  HOST: "0.0.0.0"
+  ENVIRONMENT: "production"
+  
+  # AVIF conversion settings
+  AVIF_QUALITY_MIN: "0"
+  AVIF_QUALITY_MAX: "18"
+  AVIF_SPEED: "10"
+  AVIF_JOBS: "4"
+  
+  # Memory management
+  MEMORY_MONITORING: "true"
+  GC_COLLECT_AFTER_CONVERSION: "true"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"

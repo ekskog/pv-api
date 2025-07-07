@@ -444,6 +444,46 @@ app.post(
   }
 );
 
+// Background processing function for asynchronous uploads
+async function processFilesInBackground(files, bucketName, folderPath, startTime) {
+  try {
+    console.log(`[UPLOAD_BG] Starting background processing for ${files.length} files`);
+    
+    const { results: uploadResults, errors } =
+      await uploadService.processMultipleFiles(files, bucketName, folderPath);
+
+    const processingTime = Date.now() - startTime;
+    console.log(`[UPLOAD_BG] Background processing complete in ${processingTime}ms:`, {
+      totalFilesProcessed: files.length,
+      successfulUploads: uploadResults.length,
+      failedUploads: errors.length
+    });
+
+    if (uploadResults.length > 0) {
+      console.log('[UPLOAD_BG] Successfully uploaded files:', uploadResults.map((result, index) => 
+        `${index + 1}. ${result.objectName} (${(result.size / 1024 / 1024).toFixed(2)}MB, ${result.mimetype})`
+      ));
+    }
+
+    if (errors.length > 0) {
+      console.error(
+        "[UPLOAD_BG] Failed uploads:",
+        errors.map(
+          (error, index) => `${index + 1}. ${error.filename}: ${error.error}`
+        )
+      );
+    }
+
+    console.log('[UPLOAD_BG] Background processing completed');
+  } catch (error) {
+    const errorTime = Date.now() - startTime;
+    console.error(`[UPLOAD_BG] Background processing error after ${errorTime}ms:`, {
+      error: error.message,
+      stack: error.stack,
+    });
+  }
+}
+
 // POST /buckets/:bucketName/upload - Upload file(s) to a bucket with optional folder path
 app.post(
   "/buckets/:bucketName/upload",
@@ -490,63 +530,33 @@ app.post(
         });
       }
 
-      console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with synchronous upload processing`)
+      console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with asynchronous upload processing`)
 
-      // **SYNCHRONOUS PROCESSING - Simple and direct**
-      const { results: uploadResults, errors } =
-        await uploadService.processMultipleFiles(files, bucketName, folderPath);
-
-      const processingTime = Date.now() - startTime;
-      console.log(`[UPLOAD] Upload processing complete in ${processingTime}ms:`, {
-        totalFilesProcessed: files.length,
-        successfulUploads: uploadResults.length,
-        failedUploads: errors.length
-      });
-
-      if (uploadResults.length > 0) {
-        console.log('[UPLOAD] Successfully uploaded files:', uploadResults.map((result, index) => 
-          `${index + 1}. ${result.objectName} (${(result.size / 1024 / 1024).toFixed(2)}MB, ${result.mimetype})`
-        ));
-      }
-
-      if (errors.length > 0) {
-        console.error(
-          "[UPLOAD] Failed uploads:",
-          errors.map(
-            (error, index) => `${index + 1}. ${error.filename}: ${error.error}`
-          )
-        );
-      }
-
-      // Return results
+      // **ASYNCHRONOUS PROCESSING - Return immediately, process in background**
+      
+      // Return success immediately to user
       const response = {
-        success: errors.length === 0,
+        success: true,
+        message: "Files received successfully and are being processed",
         data: {
           bucket: bucketName,
           folderPath: folderPath || "/",
-          uploaded: uploadResults,
-          uploadedCount: uploadResults.length,
-          totalFiles: files.length,
-        },
+          filesReceived: files.length,
+          status: "processing",
+          timestamp: new Date().toISOString()
+        }
       };
 
-      if (errors.length > 0) {
-        response.errors = errors;
-        response.errorCount = errors.length;
-      }
-
-      const statusCode =
-        errors.length === 0 ? 201 : uploadResults.length > 0 ? 207 : 400;
-
-      console.log(`[UPLOAD] Upload response:`, {
-        statusCode: statusCode,
-        success: response.success,
-        filesUploaded: `${uploadResults.length}/${files.length}`,
+      console.log(`[UPLOAD] Returning immediate response to user:`, {
+        statusCode: 200,
+        filesReceived: files.length,
         totalTime: `${Date.now() - startTime}ms`
       });
-      console.log('[UPLOAD] Upload request completed')
 
-      res.status(statusCode).json(response);
+      res.status(200).json(response);
+
+      // Now process files in background (no await - fire and forget)
+      processFilesInBackground(files, bucketName, folderPath, startTime);
     } catch (error) {
       const errorTime = Date.now() - startTime;
       console.error(`[UPLOAD] Upload error occurred after ${errorTime}ms:`, {

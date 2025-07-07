@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: jpg2avif-py-pdb
+  namespace: webapps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: jpg2avif-py
