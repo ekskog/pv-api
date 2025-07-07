@@ -444,10 +444,66 @@ app.post(
   }
 );
 
+// Simple in-memory conversion tracking (lightweight alternative to WebSockets)
+const conversionStatus = {
+  pending: new Set(), // Files currently being converted
+  completed: new Set(), // Files that completed conversion
+  failed: new Set(), // Files that failed conversion
+
+  addPending(filename) {
+    this.pending.add(filename);
+    this.completed.delete(filename);
+    this.failed.delete(filename);
+  },
+
+  markCompleted(filename) {
+    this.pending.delete(filename);
+    this.completed.add(filename);
+    this.failed.delete(filename);
+  },
+
+  markFailed(filename) {
+    this.pending.delete(filename);
+    this.completed.delete(filename);
+    this.failed.add(filename);
+  },
+
+  getStatus(filename) {
+    if (this.pending.has(filename)) return "pending";
+    if (this.completed.has(filename)) return "completed";
+    if (this.failed.has(filename)) return "failed";
+    return "unknown";
+  },
+
+  getAlbumStatus(albumName) {
+    const stats = { pending: 0, completed: 0, failed: 0 };
+
+    for (const filename of this.pending) {
+      if (filename.startsWith(albumName + "/")) stats.pending++;
+    }
+    for (const filename of this.completed) {
+      if (filename.startsWith(albumName + "/")) stats.completed++;
+    }
+    for (const filename of this.failed) {
+      if (filename.startsWith(albumName + "/")) stats.failed++;
+    }
+
+    return stats;
+  },
+};
+
 // Background processing function for asynchronous uploads
 async function processFilesInBackground(files, bucketName, folderPath, startTime) {
   try {
     console.log(`[UPLOAD_BG] Starting background processing for ${files.length} files`);
+    
+    // Mark image files as pending conversion
+    files.forEach(file => {
+      if (file.mimetype && file.mimetype.startsWith('image/')) {
+        const fullPath = folderPath ? `${folderPath}/${file.originalname}` : file.originalname;
+        conversionStatus.addPending(fullPath);
+      }
+    });
     
     const { results: uploadResults, errors } =
       await uploadService.processMultipleFiles(files, bucketName, folderPath);
@@ -534,7 +590,10 @@ app.post(
 
       // **ASYNCHRONOUS PROCESSING - Return immediately, process in background**
       
-      // Return success immediately to user
+      // Generate conversion ticket for polling
+      const conversionTicket = `${bucketName}-${folderPath || 'root'}-${Date.now()}`;
+      
+      // Return success immediately to user with polling ticket
       const response = {
         success: true,
         message: "Files received successfully and are being processed",
@@ -543,6 +602,7 @@ app.post(
           folderPath: folderPath || "/",
           filesReceived: files.length,
           status: "processing",
+          conversionTicket: conversionTicket,
           timestamp: new Date().toISOString()
         }
       };
@@ -572,6 +632,83 @@ app.post(
     }
   }
 );
+
+// POST /conversion-complete - Callback endpoint for converter to notify completion
+app.post("/conversion-complete", async (req, res) => {
+  try {
+    const {
+      originalFilename,
+      convertedFilename,
+      success,
+      fileSize,
+      originalSize,
+      compressionRatio,
+      processingTime,
+      bucketName,
+      folderPath,
+      error
+    } = req.body;
+
+    console.log(`[CONVERSION_CALLBACK] Conversion completion notification:`, {
+      originalFilename,
+      convertedFilename,
+      success,
+      fileSize: fileSize ? `${(fileSize / 1024 / 1024).toFixed(2)}MB` : 'unknown',
+      originalSize: originalSize ? `${(originalSize / 1024 / 1024).toFixed(2)}MB` : 'unknown',
+      compressionRatio: compressionRatio ? `${compressionRatio}%` : 'unknown',
+      processingTime: processingTime ? `${processingTime}ms` : 'unknown',
+      bucketName,
+      folderPath: folderPath || '/',
+      timestamp: new Date().toISOString()
+    });
+
+    if (success) {
+      console.log(`[CONVERSION_CALLBACK] ✅ Successfully converted: ${originalFilename} → ${convertedFilename}`);
+      
+      // Log compression details if available
+      if (compressionRatio && originalSize && fileSize) {
+        const savedSpace = originalSize - fileSize;
+        const savedSpaceMB = (savedSpace / 1024 / 1024).toFixed(2);
+        console.log(`[CONVERSION_CALLBACK] 📊 Compression stats: ${compressionRatio}% reduction, saved ${savedSpaceMB}MB`);
+      }
+
+      // Update conversion status
+      conversionStatus.markCompleted(originalFilename);
+
+      // Future: Could trigger WebSocket notifications to frontend here
+      // Future: Could update job status in database here
+      // Future: Could trigger thumbnail generation here
+
+    } else {
+      console.error(`[CONVERSION_CALLBACK] ❌ Conversion failed: ${originalFilename}`);
+      if (error) {
+        console.error(`[CONVERSION_CALLBACK] Error details: ${error}`);
+      }
+
+      // Update conversion status
+      conversionStatus.markFailed(originalFilename);
+    }
+
+    // Always respond with success to acknowledge receipt
+    res.status(200).json({
+      success: true,
+      message: "Conversion notification received",
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error(`[CONVERSION_CALLBACK] Error processing conversion callback:`, {
+      error: error.message,
+      stack: error.stack,
+      body: req.body
+    });
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to process conversion callback"
+    });
+  }
+});
 
 // GET /buckets/:bucketName/download - Get/download a specific object (Public access for images)
 app.get("/buckets/:bucketName/download", async (req, res) => {
@@ -672,6 +809,46 @@ app.get("/supported-formats", (req, res) => {
   });
 });
 
+// GET /conversion-status - Check conversion status (lightweight alternative to WebSockets)
+app.get("/conversion-status", (req, res) => {
+  const { album, filename } = req.query;
+  
+  if (filename) {
+    // Check specific file status
+    const status = conversionStatus.getStatus(filename);
+    res.json({
+      success: true,
+      data: {
+        filename,
+        status,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } else if (album) {
+    // Check album status
+    const albumStats = conversionStatus.getAlbumStatus(album);
+    res.json({
+      success: true,
+      data: {
+        album,
+        stats: albumStats,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } else {
+    // Overall status
+    res.json({
+      success: true,
+      data: {
+        totalPending: conversionStatus.pending.size,
+        totalCompleted: conversionStatus.completed.size,
+        totalFailed: conversionStatus.failed.size,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+});
+
 // Start server with database initialization
 async function startServer() {
   try {
@@ -683,7 +860,7 @@ async function startServer() {
     await redisService.connect();
 
     // Start HTTP server
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || "demo";
       console.log(`\nStarting PhotoVault ${new Date()}...`)
       console.log(`PhotoVault API server running on port ${PORT}`)
@@ -696,6 +873,31 @@ async function startServer() {
         console.log('Demo users available: admin/admin123, user/user123')
       }
     });
+
+    // Initialize WebSocket server
+    const io = new Server(server, {
+      cors: {
+        origin: [
+          "https://photos.hbvu.su",
+          "http://localhost:5173",
+          "http://localhost:3000",
+        ],
+        credentials: true,
+      },
+    });
+
+    io.on("connection", (socket) => {
+      console.log(`New WebSocket connection: ${socket.id}`);
+
+      // Handle disconnection
+      socket.on("disconnect", () => {
+        console.log(`WebSocket disconnected: ${socket.id}`);
+      });
+
+      // Future: Handle other socket events here
+    });
+
+    console.log("WebSocket server initialized");
   } catch (error) {
     console.error("Failed to start server:", error.message);
     process.exit(1);
