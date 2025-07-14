@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
+const morgan = require("morgan");
 const { Client } = require("minio");
 
 // Import authentication components
@@ -13,11 +14,9 @@ const { authenticateToken, requireRole } = require("./middleware/auth");
 const UploadService = require("./services/upload-service");
 const AvifConverterService = require("./services/avif-converter-service");
 const MetadataService = require("./services/metadata-service");
-const redisService = require("./services/redis-service");
-const jobService = require("./services/job-service");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT;
 
 // CORS Configuration - Allow frontend domain
 const corsOptions = {
@@ -31,35 +30,6 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
 };
 
-// Middleware
-app.use(cors(corsOptions));
-app.use(express.json({ limit: "2gb" })); // Increased for video uploads
-app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
-
-// Initialize database connection if not in demo mode
-async function initializeDatabase() {
-  const authMode = process.env.AUTH_MODE || "demo";
-
-  if (authMode === "database") {
-    try {
-      await database.initialize();
-    } catch (error) {
-      console.error("Database initialization failed:", error.message);
-      process.env.AUTH_MODE = "demo";
-    }
-  } else {
-    //console.log('Running in demo authentication mode')
-  }
-}
-
-// Configure multer for file uploads (store in memory)
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 2 * 1024 * 1024 * 1024, // 2GB limit for large video files from iPhone
-  },
-});
-
 // MinIO Client Configuration
 const minioClient = new Client({
   endPoint: process.env.MINIO_ENDPOINT,
@@ -69,117 +39,165 @@ const minioClient = new Client({
   secretKey: process.env.MINIO_SECRET_KEY,
 });
 
-console.log("🔧 MinIO Configuration:", {
-  endPoint: process.env.MINIO_ENDPOINT,
-  port: process.env.MINIO_PORT,
-  useSSL: process.env.MINIO_USE_SSL,
-  accessKey: process.env.MINIO_ACCESS_KEY
-    ? `${process.env.MINIO_ACCESS_KEY.substring(0, 4)}***`
-    : "NOT_SET",
-  secretKeySet: !!process.env.MINIO_SECRET_KEY,
+// Configure multer for file uploads (store in memory)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024, // 2GB limit for large video files from iPhone
+  },
 });
 
-console.log("🔧 AVIF Converter Configuration:", {
-  url: process.env.AVIF_CONVERTER_URL,
-  timeout: process.env.AVIF_CONVERTER_TIMEOUT,
-});
-
-// Initialize Upload Service
-const uploadService = new UploadService(minioClient);
-
-// Initialize Metadata Service
-const metadataService = new MetadataService(minioClient);
-
-// Initialize AVIF Converter Service (Step 2: Test integration)
-const avifConverterService = new AvifConverterService();
-
-async function countAlbums(bucketName) {
-  return new Promise((resolve, reject) => {
-    const folderSet = new Set();
-
-    const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
-
-    objectsStream.on("data", (obj) => {
-      const key = obj.name;
-      const topLevelPrefix = key.split("/")[0];
-      if (key.includes("/")) {
-        folderSet.add(topLevelPrefix);
-      }
-    });
-
-    objectsStream.on("end", () => {
-      const albums = [...folderSet];
-      console.log(`Number of top-level folders: ${albums.length}`);
-      console.log(albums);
-      resolve(albums);
-    });
-
-    objectsStream.on("error", (err) => {
-      console.error("Error listing objects:", err);
-      reject(err);
-    });
-  });
-}
-// Test route
-app.get("/", (req, res) => {
-  const authMode = process.env.AUTH_MODE || "demo";
-  res.json({
-    message: "PhotoVault API is running!",
-    timestamp: new Date().toISOString(),
-    version: "1.0.0",
-    authMode: authMode,
-  });
-});
-
-// Authentication routes
+// Middleware
+app.use(cors(corsOptions));
+app.use(express.json({ limit: "2gb" })); // Increased for video uploads
+app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 app.use("/auth", authRoutes);
+
+// Add Morgan for HTTP request logging
+app.use(
+  morgan(
+    ":method :url :status :response-time ms - :res[content-length] bytes",
+    {
+      stream: {
+        write: (message) => {
+          console.log(`[HTTP] ${message.trim()}`);
+        },
+      },
+    }
+  )
+);
+
+// Initialize Services
+const uploadService = new UploadService(minioClient);
 
 // Health check route
 app.get("/health", async (req, res) => {
-  //console.log(`[HEALTH] Health check request received from ${req.ip} at ${new Date().toISOString()}`)
+  console.log(
+    `[HEALTH] Health check request received from ${
+      req.ip
+    } at ${new Date().toISOString()}`
+  );
   try {
-    //console.log('[HEALTH] Testing MinIO connection...')
     // Test MinIO connection by listing albums
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
     console.log(
-      `[HEALTH] MinIO connection successful, found ${albums.length} album`
+      `[HEALTH] MinIO connection successful, found ${albums.length} albums`
     );
 
-    //console.log('[HEALTH] Testing Redis connection...')
-    // Test Redis connection
-    const redisStatus = await redisService.getConnectionStatus();
-    console.log(
-      `[HEALTH] Redis connection status: ${
-        redisStatus.connected ? "connected" : "disconnected"
-      }`
-    );
+    // Check JPEG converter service
+    let jpegConverterHealthy = false;
+    try {
+      // Get the converter URL from environment, with Kubernetes service URL as fallback
+      const jpegConverterUrl = process.env.JPEG2AVIF_CONVERTER_URL;
+
+      console.log(
+        `[HEALTH] Testing JPEG converter connection at ${jpegConverterUrl}`
+      );
+
+      const jpegResponse = await fetch(`${jpegConverterUrl}/health`, {
+        timeout: parseInt(process.env.JPEG2AVIF_CONVERTER_TIMEOUT),
+      });
+
+      if (jpegResponse.ok) {
+        jpegConverterHealthy = true;
+        console.log(`[HEALTH] JPEG converter is healthy`);
+      } else {
+        console.error(
+          `[HEALTH] JPEG converter responded with status: ${jpegResponse.status}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[HEALTH] JPEG converter health check failed: ${error.message}`
+      );
+    }
+
+    // Check HEIC converter service
+    let heicConverterHealthy = false;
+    try {
+      // Get the converter URL from environment, with Kubernetes service URL as fallback
+      const heicConverterUrl = process.env.HEIC2AVIF_CONVERTER_URL;
+
+      console.log(
+        `[HEALTH] Testing HEIC converter connection at ${heicConverterUrl}`
+      );
+      console.log(
+        `[HEALTH] Using timeout: ${parseInt(
+          process.env.HEIC2AVIF_CONVERTER_TIMEOUT
+        )}ms`
+      );
+
+      const heicResponse = await fetch(`${heicConverterUrl}/health`, {
+        timeout: parseInt(process.env.HEIC2AVIF_CONVERTER_TIMEOUT),
+      });
+
+      if (heicResponse.ok) {
+        heicConverterHealthy = true;
+        console.log(`[HEALTH] HEIC converter is healthy`);
+      } else {
+        console.error(
+          `[HEALTH] HEIC converter responded with status: ${heicResponse.status}`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[HEALTH] HEIC converter health check failed: ${error.message}`
+      );
+      console.error(
+        `[HEALTH] Make sure the converter service is running and accessible via K8s service name`
+      );
+    }
+
+    // Determine overall health status based on MinIO and BOTH converter services
+    // All three must be healthy for the API to function properly
+    const isHealthy =
+      albums.length > 0 && jpegConverterHealthy && heicConverterHealthy;
+    const status = isHealthy ? "healthy" : "degraded";
+
+    const warnings = [];
+    if (!jpegConverterHealthy) {
+      warnings.push(
+        "JPEG converter service is unavailable - image conversion will fail"
+      );
+    }
+    if (!heicConverterHealthy) {
+      warnings.push(
+        "HEIC converter service is unavailable - HEIC image conversion will fail"
+      );
+    }
 
     const healthStatus = {
-      status: "healthy",
+      status,
       timestamp: new Date().toISOString(),
       minio: {
         connected: true,
         albums: albums.length,
         endpoint: process.env.MINIO_ENDPOINT,
       },
-      redis: redisStatus,
+      converters: {
+        jpeg: {
+          connected: jpegConverterHealthy,
+          endpoint: process.env.JPEG2AVIF_CONVERTER_URL,
+        },
+        heic: {
+          connected: heicConverterHealthy,
+          endpoint: process.env.HEIC2AVIF_CONVERTER_URL,
+        },
+      },
     };
 
-    // If Redis is not connected, still return healthy but with warning
-    if (!redisStatus.connected) {
-      healthStatus.status = "degraded";
-      healthStatus.warnings = [
-        "Redis connection unavailable - async uploads will be disabled",
-      ];
+    if (warnings.length > 0) {
+      healthStatus.warnings = warnings;
     }
 
-    //console.log('[HEALTH] Sending healthy response')
-    res.json(healthStatus);
+    const responseStatus = isHealthy ? 200 : 503;
+    console.log(
+      `[HEALTH] Sending response with status: ${status}, code: ${responseStatus}`
+    );
+    res.status(responseStatus).json(healthStatus);
   } catch (error) {
     console.error(`[HEALTH] Error during health check: ${error.message}`);
-    const redisStatus = await redisService.getConnectionStatus();
 
-    //console.log('[HEALTH] Sending unhealthy response')
     res.status(503).json({
       status: "unhealthy",
       timestamp: new Date().toISOString(),
@@ -187,7 +205,18 @@ app.get("/health", async (req, res) => {
         connected: false,
         error: error.message,
       },
-      redis: redisStatus,
+      converters: {
+        jpeg: {
+          connected: false,
+          endpoint: process.env.JPEG2AVIF_CONVERTER_URL,
+          error: "Could not verify due to MinIO connection failure",
+        },
+        heic: {
+          connected: false,
+          endpoint: process.env.HEIC2AVIF_CONVERTER_URL,
+          error: "Could not verify due to MinIO connection failure",
+        },
+      },
     });
   }
 });
@@ -325,7 +354,6 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
       },
     };
 
-
     res.json(responseData);
   } catch (error) {
     // debugService.server.error('Error in GET /buckets/:bucketName/objects:', error.message)
@@ -346,7 +374,10 @@ app.post(
       const { bucketName } = req.params;
       const { folderPath } = req.body;
 
+      console.log(`[FOLDER_CREATE] Extracted folderPath: "${folderPath}"`);
+
       if (!folderPath) {
+        console.log(`[FOLDER_CREATE] ERROR: Folder path is required`);
         return res.status(400).json({
           success: false,
           error: "Folder path is required",
@@ -354,8 +385,12 @@ app.post(
       }
 
       // Check if bucket exists
+      console.log(`[FOLDER_CREATE] Checking if bucket exists: ${bucketName}`);
       const bucketExists = await minioClient.bucketExists(bucketName);
+      console.log(`[FOLDER_CREATE] Bucket exists: ${bucketExists}`);
+
       if (!bucketExists) {
+        console.log(`[FOLDER_CREATE] ERROR: Bucket not found`);
         return res.status(404).json({
           success: false,
           error: "Bucket not found",
@@ -369,6 +404,9 @@ app.post(
       cleanPath = cleanPath.replace(/\/+/g, "/"); // Replace multiple slashes with single slash
 
       if (!cleanPath) {
+        console.log(
+          `[FOLDER_CREATE] ERROR: Invalid folder path after cleaning`
+        );
         return res.status(400).json({
           success: false,
           error: "Invalid folder path",
@@ -376,8 +414,12 @@ app.post(
       }
 
       const normalizedPath = `${cleanPath}/`;
+      console.log(`[FOLDER_CREATE] Final normalized path: "${normalizedPath}"`);
 
       // Check if folder already exists by looking for any objects with this prefix
+      console.log(
+        `[FOLDER_CREATE] Checking for existing objects with prefix: "${normalizedPath}"`
+      );
       const existingObjects = [];
       const stream = minioClient.listObjectsV2(
         bucketName,
@@ -386,11 +428,15 @@ app.post(
       );
 
       for await (const obj of stream) {
+        console.log(`[FOLDER_CREATE] Found existing object: ${obj.name}`);
         existingObjects.push(obj);
         break; // We only need to check if any object exists with this prefix
       }
 
       if (existingObjects.length > 0) {
+        console.log(
+          `[FOLDER_CREATE] ERROR: Folder already exists (${existingObjects.length} objects found)`
+        );
         return res.status(409).json({
           success: false,
           error: "Folder already exists",
@@ -400,6 +446,7 @@ app.post(
       // Instead of creating an empty folder marker, create a metadata JSON file
       // This serves as both the folder marker and metadata storage
       const metadataPath = `${normalizedPath}${cleanPath}.json`;
+
       const initialMetadata = {
         album: {
           name: cleanPath,
@@ -416,7 +463,7 @@ app.post(
         JSON.stringify(initialMetadata, null, 2)
       );
 
-      await minioClient.putObject(
+      const putResult = await minioClient.putObject(
         bucketName,
         metadataPath,
         metadataContent,
@@ -445,106 +492,63 @@ app.post(
   }
 );
 
-// Simple in-memory conversion tracking (lightweight alternative to WebSockets)
-const conversionStatus = {
-  pending: new Set(), // Files currently being converted
-  completed: new Set(), // Files that completed conversion
-  failed: new Set(), // Files that failed conversion
-
-  addPending(filename) {
-    this.pending.add(filename);
-    this.completed.delete(filename);
-    this.failed.delete(filename);
-  },
-
-  markCompleted(filename) {
-    this.pending.delete(filename);
-    this.completed.add(filename);
-    this.failed.delete(filename);
-  },
-
-  markFailed(filename) {
-    this.pending.delete(filename);
-    this.completed.delete(filename);
-    this.failed.add(filename);
-  },
-
-  getStatus(filename) {
-    if (this.pending.has(filename)) return "pending";
-    if (this.completed.has(filename)) return "completed";
-    if (this.failed.has(filename)) return "failed";
-    return "unknown";
-  },
-
-  getAlbumStatus(albumName) {
-    const stats = { pending: 0, completed: 0, failed: 0 };
-
-    for (const filename of this.pending) {
-      if (filename.startsWith(albumName + "/")) stats.pending++;
-    }
-    for (const filename of this.completed) {
-      if (filename.startsWith(albumName + "/")) stats.completed++;
-    }
-    for (const filename of this.failed) {
-      if (filename.startsWith(albumName + "/")) stats.failed++;
-    }
-
-    return stats;
-  },
-};
-
 // Background processing function for asynchronous uploads
-async function processFilesInBackground(files, bucketName, folderPath, startTime) {
+// Add detailed logging for background processing
+async function processFilesInBackground(
+  files,
+  bucketName,
+  folderPath,
+  startTime
+) {
   try {
-    console.log(`[UPLOAD_BG] Starting background processing for ${files.length} files`);
-    
+    console.log(
+      `[UPLOAD_BG] Starting background processing for ${files.length} files`
+    );
+
     // Mark image files as pending conversion
-    files.forEach(file => {
-      if (file.mimetype && file.mimetype.startsWith('image/')) {
-        const fullPath = folderPath ? `${folderPath}/${file.originalname}` : file.originalname;
-        conversionStatus.addPending(fullPath);
+    files.forEach((file) => {
+      if (file.mimetype && file.mimetype.startsWith("image/")) {
+        const fullPath = folderPath
+          ? `${folderPath}/${file.originalname}`
+          : file.originalname;
         console.log(`[CONVERSION_STATUS] Added to pending: ${fullPath}`);
       }
     });
-    
-    console.log(`[CONVERSION_STATUS] Current status - Pending: ${conversionStatus.pending.size}, Completed: ${conversionStatus.completed.size}, Failed: ${conversionStatus.failed.size}`);
-    
+
     const { results: uploadResults, errors } =
       await uploadService.processMultipleFiles(files, bucketName, folderPath);
 
-    const processingTime = Date.now() - startTime;
-    console.log(`[UPLOAD_BG] Background processing complete in ${processingTime}ms:`, {
-      totalFilesProcessed: files.length,
-      successfulUploads: uploadResults.length,
-      failedUploads: errors.length
+    // Log results and update conversion status
+    uploadResults.forEach((result) => {
+      const fullPath = folderPath
+        ? `${folderPath}/${result.originalName}`
+        : result.originalName;
+      console.log(`[CONVERSION_STATUS] Marked as completed: ${fullPath}`);
     });
 
-    if (uploadResults.length > 0) {
-      console.log('[UPLOAD_BG] Successfully uploaded files:', uploadResults.map((result, index) => 
-        `${index + 1}. ${result.objectName} (${(result.size / 1024 / 1024).toFixed(2)}MB, ${result.mimetype})`
-      ));
-    }
+    errors.forEach((error) => {
+      const fullPath = folderPath
+        ? `${folderPath}/${error.filename}`
+        : error.filename;
+      console.log(`[CONVERSION_STATUS] Marked as failed: ${fullPath}`);
+    });
 
-    if (errors.length > 0) {
-      console.error(
-        "[UPLOAD_BG] Failed uploads:",
-        errors.map(
-          (error, index) => `${index + 1}. ${error.filename}: ${error.error}`
-        )
-      );
-    }
-
-    console.log('[UPLOAD_BG] Background processing completed');
+    console.log(
+      `[UPLOAD_BG] Background processing completed - Success: ${uploadResults.length}, Errors: ${errors.length}`
+    );
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    console.error(`[UPLOAD_BG] Background processing error after ${errorTime}ms:`, {
-      error: error.message,
-      stack: error.stack,
-    });
+    console.error(
+      `[UPLOAD_BG] Background processing error after ${errorTime}ms:`,
+      {
+        error: error.message,
+        stack: error.stack,
+      }
+    );
   }
 }
 
-// POST /buckets/:bucketName/upload - Upload file(s) to a bucket with optional folder path
+// POST /buckets/:bucketName/upload - Upload file(s) to a bucket
 app.post(
   "/buckets/:bucketName/upload",
   authenticateToken,
@@ -561,24 +565,32 @@ app.post(
         bucket: bucketName,
         folder: folderPath,
         filesCount: files ? files.length : 0,
-        user: req.user?.username || 'unknown',
-        timestamp: new Date().toISOString()
+        user: req.user?.username || "unknown",
+        timestamp: new Date().toISOString(),
       });
 
       if (!files || files.length === 0) {
-        console.error('[UPLOAD] Upload failed: No files provided')
+        console.error("[UPLOAD] Upload failed: No files provided");
         return res.status(400).json({
           success: false,
-          error: 'No files provided'
-        })
+          error: "No files provided",
+        });
       }
 
-      console.log('[UPLOAD] Files to upload:', files.map((file, index) => 
-        `${index + 1}. ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`
-      ));
+      console.log(
+        "[UPLOAD] Files to upload:",
+        files.map(
+          (file, index) =>
+            `${index + 1}. ${file.originalname} (${(
+              file.size /
+              1024 /
+              1024
+            ).toFixed(2)}MB, ${file.mimetype})`
+        )
+      );
 
       // Check if bucket exists
-      console.log(`[UPLOAD] Checking if bucket '${bucketName}' exists...`)
+      console.log(`[UPLOAD] Checking if bucket '${bucketName}' exists...`);
       const bucketExists = await minioClient.bucketExists(bucketName);
       if (!bucketExists) {
         console.error(
@@ -590,14 +602,49 @@ app.post(
         });
       }
 
-      console.log(`[UPLOAD] Bucket '${bucketName}' exists - proceeding with asynchronous upload processing`)
+      // Check if folder exists (if folderPath is provided)
+      if (folderPath) {
+        console.log(
+          `[UPLOAD] Checking if folder '${folderPath}' exists in bucket '${bucketName}'...`
+        );
+        const folderExists = await new Promise((resolve, reject) => {
+          const stream = minioClient.listObjectsV2(
+            bucketName,
+            folderPath,
+            false
+          );
+          let found = false;
+
+          stream.on("data", (obj) => {
+            if (obj.prefix === folderPath || obj.name.startsWith(folderPath)) {
+              found = true;
+            }
+          });
+
+          stream.on("end", () => resolve(found));
+          stream.on("error", (err) => reject(err));
+        });
+
+        if (!folderExists) {
+          console.error(
+            `[UPLOAD] Upload failed: Folder '${folderPath}' not found in bucket '${bucketName}'`
+          );
+          return res.status(404).json({
+            success: false,
+            error: "Folder not found",
+          });
+        }
+      }
+
+      console.log(
+        `[UPLOAD] Bucket and folder validation passed - proceeding with asynchronous upload processing`
+      );
 
       // **ASYNCHRONOUS PROCESSING - Return immediately, process in background**
-      
-      // Generate conversion ticket for polling
-      const conversionTicket = `${bucketName}-${folderPath || 'root'}-${Date.now()}`;
-      
-      // Return success immediately to user with polling ticket
+      const conversionTicket = `${bucketName}-${
+        folderPath || "root"
+      }-${Date.now()}`;
+
       const response = {
         success: true,
         message: "Files received successfully and are being processed",
@@ -606,15 +653,14 @@ app.post(
           folderPath: folderPath || "/",
           filesReceived: files.length,
           status: "processing",
-          conversionTicket: conversionTicket,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       };
 
       console.log(`[UPLOAD] Returning immediate response to user:`, {
         statusCode: 200,
         filesReceived: files.length,
-        totalTime: `${Date.now() - startTime}ms`
+        totalTime: `${Date.now() - startTime}ms`,
       });
 
       res.status(200).json(response);
@@ -650,70 +696,52 @@ app.post("/conversion-complete", async (req, res) => {
       processingTime,
       bucketName,
       folderPath,
-      error
+      error,
     } = req.body;
 
-    console.log(`[CONVERSION_CALLBACK] Conversion completion notification:`, {
-      originalFilename,
-      convertedFilename,
-      success,
-      fileSize: fileSize ? `${(fileSize / 1024 / 1024).toFixed(2)}MB` : 'unknown',
-      originalSize: originalSize ? `${(originalSize / 1024 / 1024).toFixed(2)}MB` : 'unknown',
-      compressionRatio: compressionRatio ? `${compressionRatio}%` : 'unknown',
-      processingTime: processingTime ? `${processingTime}ms` : 'unknown',
-      bucketName,
-      folderPath: folderPath || '/',
-      timestamp: new Date().toISOString()
-    });
-
     if (success) {
-      console.log(`[CONVERSION_CALLBACK] ✅ Successfully converted: ${originalFilename} → ${convertedFilename}`);
-      
+      console.log(
+        `[CONVERSION_CALLBACK] ✅ Successfully converted: ${originalFilename} → ${convertedFilename}`
+      );
+
       // Log compression details if available
       if (compressionRatio && originalSize && fileSize) {
         const savedSpace = originalSize - fileSize;
         const savedSpaceMB = (savedSpace / 1024 / 1024).toFixed(2);
-        console.log(`[CONVERSION_CALLBACK] 📊 Compression stats: ${compressionRatio}% reduction, saved ${savedSpaceMB}MB`);
+        console.log(
+          `[CONVERSION_CALLBACK] 📊 Compression stats: ${compressionRatio}% reduction, saved ${savedSpaceMB}MB`
+        );
       }
 
       // Update conversion status
-      conversionStatus.markCompleted(originalFilename);
-      console.log(`[CONVERSION_STATUS] Marked as completed: ${originalFilename}`);
-      console.log(`[CONVERSION_STATUS] Current status - Pending: ${conversionStatus.pending.size}, Completed: ${conversionStatus.completed.size}, Failed: ${conversionStatus.failed.size}`);
-
-      // Future: Could trigger WebSocket notifications to frontend here
-      // Future: Could update job status in database here
-      // Future: Could trigger thumbnail generation here
-
     } else {
-      console.error(`[CONVERSION_CALLBACK] ❌ Conversion failed: ${originalFilename}`);
+      console.error(
+        `[CONVERSION_CALLBACK] ❌ Conversion failed: ${originalFilename}`
+      );
       if (error) {
         console.error(`[CONVERSION_CALLBACK] Error details: ${error}`);
       }
-
-      // Update conversion status
-      conversionStatus.markFailed(originalFilename);
-      console.log(`[CONVERSION_STATUS] Marked as failed: ${originalFilename}`);
-      console.log(`[CONVERSION_STATUS] Current status - Pending: ${conversionStatus.pending.size}, Completed: ${conversionStatus.completed.size}, Failed: ${conversionStatus.failed.size}`);
     }
 
     // Always respond with success to acknowledge receipt
     res.status(200).json({
       success: true,
       message: "Conversion notification received",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error) {
-    console.error(`[CONVERSION_CALLBACK] Error processing conversion callback:`, {
-      error: error.message,
-      stack: error.stack,
-      body: req.body
-    });
+    console.error(
+      `[CONVERSION_CALLBACK] Error processing conversion callback:`,
+      {
+        error: error.message,
+        stack: error.stack,
+        body: req.body,
+      }
+    );
 
     res.status(500).json({
       success: false,
-      error: "Failed to process conversion callback"
+      error: "Failed to process conversion callback",
     });
   }
 });
@@ -729,29 +757,6 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
         success: false,
         error: "Object name is required",
       });
-    }
-
-    // Check if bucket exists
-    const bucketExists = await minioClient.bucketExists(bucketName);
-    if (!bucketExists) {
-      return res.status(404).json({
-        success: false,
-        error: "Bucket not found",
-      });
-    }
-
-    // Get object metadata first to check if it exists
-    let objectStat;
-    try {
-      objectStat = await minioClient.statObject(bucketName, object);
-    } catch (error) {
-      if (error.code === "NotFound") {
-        return res.status(404).json({
-          success: false,
-          error: "Object not found",
-        });
-      }
-      throw error;
     }
 
     // Stream the object directly to the response
@@ -780,113 +785,36 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
   }
 });
 
-// Supported file types endpoint
-app.get("/supported-formats", (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      images: {
-        regular: ["jpg", "jpeg", "png", "webp", "tiff", "tif", "bmp"],
-        heic: ["heic", "heif"],
-      },
-      videos: [
-        "mov",
-        "mp4",
-        "m4v",
-        "avi",
-        "mkv",
-        "webm",
-        "flv",
-        "wmv",
-        "3gp",
-        "m2ts",
-        "mts",
-      ],
-      maxFileSizes: {
-        images: "100MB",
-        videos: "2GB",
-        other: "500MB",
-      },
-      processing: {
-        images: "Converted to AVIF variants",
-        heic: "Converted to AVIF variants",
-        videos: "Stored as-is (no conversion)",
-        other: "Stored as-is",
-      },
-    },
-  });
-});
-
-// GET /conversion-status - Check conversion status (lightweight alternative to WebSockets)
-app.get("/conversion-status", (req, res) => {
-  const { album, filename } = req.query;
-  
-  console.log(`[CONVERSION_STATUS] Status check request - album: ${album || 'none'}, filename: ${filename || 'none'}`);
-  
-  if (filename) {
-    // Check specific file status
-    const status = conversionStatus.getStatus(filename);
-    console.log(`[CONVERSION_STATUS] File ${filename} status: ${status}`);
-    res.json({
-      success: true,
-      data: {
-        filename,
-        status,
-        timestamp: new Date().toISOString()
-      }
-    });
-  } else if (album) {
-    // Check album status
-    const albumStats = conversionStatus.getAlbumStatus(album);
-    console.log(`[CONVERSION_STATUS] Album ${album} stats:`, albumStats);
-    res.json({
-      success: true,
-      data: {
-        album,
-        stats: albumStats,
-        timestamp: new Date().toISOString()
-      }
-    });
-  } else {
-    // Overall status
-    const overallStats = {
-      totalPending: conversionStatus.pending.size,
-      totalCompleted: conversionStatus.completed.size,
-      totalFailed: conversionStatus.failed.size
-    };
-    console.log(`[CONVERSION_STATUS] Overall stats:`, overallStats);
-    res.json({
-      success: true,
-      data: {
-        ...overallStats,
-        timestamp: new Date().toISOString()
-      }
-    });
-  }
-});
-
 // Start server with database initialization
 async function startServer() {
   try {
     // Initialize database connection
     await initializeDatabase();
 
-    // Initialize Redis connection (still used for other features if available)
-    console.log('Initializing Redis connection...')
-    await redisService.connect();
-
     // Start HTTP server
     app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || "demo";
-      console.log(`\nStarting PhotoVault ${new Date()}...`)
-      console.log(`PhotoVault API server running on port ${PORT}`)
-      console.log(`Health check: http://localhost:${PORT}/health`)
-      console.log(`Authentication: http://localhost:${PORT}/auth/status`)
-      console.log(`MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`)
-      console.log(`Auth Mode: ${authMode}`)
+      const k8sService =
+        process.env.K8S_SERVICE_NAME || "photovault-api-service";
+      const k8sNamespace = process.env.K8S_NAMESPACE || "webapps";
+      const publicUrl =
+        process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
+      console.log(`\nStarting PhotoVault ${new Date()}...`);
+      console.log(`PhotoVault API server running on port ${PORT}`);
+      console.log(
+        `Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`
+      );
+      console.log(`Health check (public): ${publicUrl}/health`);
+      console.log(
+        `Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`
+      );
+      console.log(
+        `MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
+      );
+      console.log(`Auth Mode: ${authMode}`);
 
       if (authMode === "demo") {
-        console.log('Demo users available: admin/admin123, user/user123')
+        console.log("Demo users available: admin/admin123, user/user123");
       }
     });
   } catch (error) {
@@ -897,13 +825,56 @@ async function startServer() {
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  console.log('Shutting down server...')
+  console.log("Shutting down server...");
   if (process.env.AUTH_MODE === "database") {
     await database.close();
   }
-  await redisService.disconnect();
   process.exit(0);
 });
+
+// Initialize database connection if not in demo mode
+async function initializeDatabase() {
+  const authMode = process.env.AUTH_MODE;
+
+  if (authMode === "database") {
+    try {
+      await database.initialize();
+    } catch (error) {
+      console.error("Database initialization failed:", error.message);
+      process.env.AUTH_MODE = "demo";
+    }
+  } else {
+    //console.log('Running in demo authentication mode')
+  }
+}
+
+async function countAlbums(bucketName) {
+  return new Promise((resolve, reject) => {
+    const folderSet = new Set();
+
+    const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
+
+    objectsStream.on("data", (obj) => {
+      const key = obj.name;
+      const topLevelPrefix = key.split("/")[0];
+      if (key.includes("/")) {
+        folderSet.add(topLevelPrefix);
+      }
+    });
+
+    objectsStream.on("end", () => {
+      const albums = [...folderSet];
+      console.log(`Number of top-level folders: ${albums.length}`);
+      console.log(albums);
+      resolve(albums);
+    });
+
+    objectsStream.on("error", (err) => {
+      console.error("Error listing objects:", err);
+      reject(err);
+    });
+  });
+}
 
 // Start the server
 startServer();
