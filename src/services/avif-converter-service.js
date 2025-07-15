@@ -2,32 +2,28 @@
 
 class AvifConverterService {
   constructor() {
-    this.baseUrl = process.env.AVIF_CONVERTER_URL;
-    this.timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT) || 300000; // 5 minutes default
     
-    // New JPEG2AVIF microservice configuration
+    // microservices configuration
+    this.heic2avifUrl = process.env.HEIC2AVIF_CONVERTER_URL;
+    this.heic2avifTimeout = parseInt(process.env.HEIC2AVIF_CONVERTER_TIMEOUT);
     this.jpeg2avifUrl = process.env.JPEG2AVIF_CONVERTER_URL;
-    this.jpeg2avifTimeout = parseInt(process.env.JPEG2AVIF_CONVERTER_TIMEOUT) || 300000;
+    this.jpeg2avifTimeout = parseInt(process.env.JPEG2AVIF_CONVERTER_TIMEOUT);
     
-    if (!this.baseUrl) {
-      console.error('[AVIF_CONVERTER] CRITICAL ERROR: AVIF_CONVERTER_URL environment variable not set!');
-      throw new Error('AVIF_CONVERTER_URL environment variable is required');
-    }
     
     // Log configuration
     console.log(`[AVIF_CONVERTER] Configured services:`);
-    console.log(`  - HEIC converter: ${this.baseUrl}`);
-    console.log(`  - JPEG converter: ${this.jpeg2avifUrl || 'Not configured (will use HEIC converter)'}`);
+    console.log(`  - HEIC converter: ${this.heic2avifUrl}`);
+    console.log(`  - JPEG converter: ${this.jpeg2avifUrl}`);
   }
 
   /**
-   * Check if the AVIF converter microservice is healthy
+   * Check if the HEIC converter microservice is healthy
    * @returns {Object} Health check result
    */
-  async checkHealth() {
+  async checkHeicHealth() {
     try {
       //console.log(`[AVIF_CONVERTER] Checking health at: ${this.baseUrl}/health`);
-      const response = await fetch(`${this.baseUrl}/health`, {
+      const response = await fetch(`${this.heic2avifUrl}/health`, {
         method: 'GET',
         timeout: 5000 // 5 second timeout for health checks
       });
@@ -37,14 +33,12 @@ class AvifConverterService {
       }
       
       const data = await response.json();
-      //console.log(`[AVIF_CONVERTER] Health check successful:`, data);
-      
       return {
         success: true,
         data: data
       };
     } catch (error) {
-      console.error(`[AVIF_CONVERTER] Health check failed:`, error.message);
+      console.error(`[AVIF_CONVERTER] HEIC Health check failed:`, error.message);
       return {
         success: false,
         error: error.message
@@ -56,16 +50,8 @@ class AvifConverterService {
    * Check if the JPEG2AVIF converter microservice is healthy
    * @returns {Object} Health check result
    */
-  async checkJpeg2AvifHealth() {
-    if (!this.jpeg2avifUrl) {
-      return {
-        success: false,
-        error: 'JPEG2AVIF service not configured'
-      };
-    }
-
+  async checkJpegHealth() {
     try {
-      console.log(`[AVIF_CONVERTER] Checking JPEG2AVIF health at: ${this.jpeg2avifUrl}/health`);
       const response = await fetch(`${this.jpeg2avifUrl}/health`, {
         method: 'GET',
         timeout: 5000 // 5 second timeout for health checks
@@ -75,9 +61,7 @@ class AvifConverterService {
         throw new Error(`JPEG2AVIF health check failed: ${response.status} ${response.statusText}`);
       }
       
-      const data = await response.json();
-      console.log(`[AVIF_CONVERTER] JPEG2AVIF health check successful:`, data);
-      
+      const data = await response.json();      
       return {
         success: true,
         data: data
@@ -96,8 +80,8 @@ class AvifConverterService {
    * @returns {Object} Combined health check result
    */
   async checkAllServicesHealth() {
-    const heicHealth = await this.checkHealth();
-    const jpegHealth = await this.checkJpeg2AvifHealth();
+    const heicHealth = await this.checkHeicHealth();
+    const jpegHealth = await this.checkJpegHealth();
     
     return {
       heicConverter: heicHealth,
@@ -250,13 +234,13 @@ class AvifConverterService {
   async isAvailable(originalName = '') {
     const isJPEG = /\.(jpg|jpeg)$/i.test(originalName);
     
-    if (isJPEG && this.jpeg2avifUrl) {
+    if (isJPEG) {
       // Check JPEG2AVIF service for JPEG files
-      const health = await this.checkJpeg2AvifHealth();
+      const health = await this.checkJpegHealth();
       return health.success;
     } else {
       // Check HEIC converter for HEIC files
-      const health = await this.checkHealth();
+      const health = await this.checkHeicHealth();
       return health.success;
     }
   }

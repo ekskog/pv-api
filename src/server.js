@@ -589,62 +589,6 @@ app.post(
         )
       );
 
-      // Check if bucket exists
-      console.log(`[UPLOAD] Checking if bucket '${bucketName}' exists...`);
-      const bucketExists = await minioClient.bucketExists(bucketName);
-      if (!bucketExists) {
-        console.error(
-          `[UPLOAD] Upload failed: Bucket '${bucketName}' not found`
-        );
-        return res.status(404).json({
-          success: false,
-          error: "Bucket not found",
-        });
-      }
-
-      // Check if folder exists (if folderPath is provided)
-      if (folderPath) {
-        console.log(
-          `[UPLOAD] Checking if folder '${folderPath}' exists in bucket '${bucketName}'...`
-        );
-        const folderExists = await new Promise((resolve, reject) => {
-          const stream = minioClient.listObjectsV2(
-            bucketName,
-            folderPath,
-            false
-          );
-          let found = false;
-
-          stream.on("data", (obj) => {
-            if (obj.prefix === folderPath || obj.name.startsWith(folderPath)) {
-              found = true;
-            }
-          });
-
-          stream.on("end", () => resolve(found));
-          stream.on("error", (err) => reject(err));
-        });
-
-        if (!folderExists) {
-          console.error(
-            `[UPLOAD] Upload failed: Folder '${folderPath}' not found in bucket '${bucketName}'`
-          );
-          return res.status(404).json({
-            success: false,
-            error: "Folder not found",
-          });
-        }
-      }
-
-      console.log(
-        `[UPLOAD] Bucket and folder validation passed - proceeding with asynchronous upload processing`
-      );
-
-      // **ASYNCHRONOUS PROCESSING - Return immediately, process in background**
-      const conversionTicket = `${bucketName}-${
-        folderPath || "root"
-      }-${Date.now()}`;
-
       const response = {
         success: true,
         message: "Files received successfully and are being processed",
@@ -759,8 +703,19 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
       });
     }
 
+    console.log('[UPLOAD SERVICE] About to stream object:', {
+      bucketName,
+      object
+    });
+
     // Stream the object directly to the response
     const objectStream = await minioClient.getObject(bucketName, object);
+    console.log('[UPLOAD SERVICE] Object stream created successfully');
+
+    // Retrieve object metadata
+    const objectStat = await minioClient.statObject(bucketName, object);
+
+    console.log('[UPLOAD SERVICE] Object metadata retrieved successfully:', objectStat);
 
     // Set appropriate headers
     res.setHeader(
