@@ -12,14 +12,12 @@ const authRoutes = require("./routes/auth");
 const { authenticateToken, requireRole } = require("./middleware/auth");
 
 // Store active SSE connections by job ID
-const sseConnections = new Map()
+const sseConnections = new Map();
 
+// Helper function to send SSE event
 const sendSSEEvent = (jobId, eventType, data) => {
-  const connection = sseConnections.get(jobId);
-  if (!connection) {
-    console.log(`[SSE] No connection found for job ${jobId}`);
-    return;
-  }
+  const connections = sseConnections.get(jobId);
+  if (!connections) return;
 
   const eventData = {
     type: eventType,
@@ -29,21 +27,35 @@ const sendSSEEvent = (jobId, eventType, data) => {
 
   const message = `data: ${JSON.stringify(eventData)}\n\n`;
 
-  try {
-    connection.write(message);
-    console.log(`[SSE] Event sent successfully to job ${jobId}`);
-  } catch (error) {
-    console.error(`[SSE] Error sending to job ${jobId}:`, error.message);
-    // Remove failed connection
+  // Send to all connections for this job
+  connections.forEach((res, connectionId) => {
+    try {
+      res.write(message);
+    } catch (error) {
+      console.error(
+        `[SSE] Error sending to connection ${connectionId}:`,
+        error.message
+      );
+      // Remove failed connection
+      connections.delete(connectionId);
+    }
+  });
+
+  // Clean up if no connections left
+  if (connections.size === 0) {
     sseConnections.delete(jobId);
   }
 };
 
 // Import services
 const UploadService = require("./services/upload-service");
+const AvifConverterService = require("./services/avif-converter-service");
+const MetadataService = require("./services/metadata-service");
 
 const app = express();
 const PORT = process.env.PORT;
+// Add this line to store the server instance
+let server;
 
 // CORS Configuration - Allow frontend domain
 const corsOptions = {
@@ -93,6 +105,83 @@ app.use(
     }
   )
 );
+
+// SSE endpoint for processing status
+app.get("/api/processing-status/:jobId", (req, res) => {
+  const { jobId } = req.params;
+  const connectionId = uuidv4();
+
+  console.log(
+    `[SSE] New connection for job ${jobId}, connection ID: ${connectionId}`
+  );
+
+  // Set SSE headers
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Cache-Control",
+  });
+
+  // Send initial connection message
+  res.write(
+    `data: ${JSON.stringify({
+      type: "connected",
+      jobId: jobId,
+      message: "Connected to processing status stream",
+      timestamp: new Date().toISOString(),
+    })}\n\n`
+  );
+
+  // Store this connection
+  if (!sseConnections.has(jobId)) {
+    sseConnections.set(jobId, new Map());
+  }
+  sseConnections.get(jobId).set(connectionId, res);
+
+  // Handle client disconnect
+  req.on("close", () => {
+    console.log(`[SSE] Connection ${connectionId} closed for job ${jobId}`);
+    const connections = sseConnections.get(jobId);
+    if (connections) {
+      connections.delete(connectionId);
+      if (connections.size === 0) {
+        sseConnections.delete(jobId);
+      }
+    }
+  });
+
+  // Keep connection alive with heartbeat
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(
+        `data: ${JSON.stringify({
+          type: "heartbeat",
+          timestamp: new Date().toISOString(),
+        })}\n\n`
+      );
+    } catch (error) {
+      console.error(
+        `[SSE] Heartbeat failed for connection ${connectionId}:`,
+        error.message
+      );
+      clearInterval(heartbeat);
+      const connections = sseConnections.get(jobId);
+      if (connections) {
+        connections.delete(connectionId);
+        if (connections.size === 0) {
+          sseConnections.delete(jobId);
+        }
+      }
+    }
+  }, 30000); // Send heartbeat every 30 seconds
+
+  // Clean up heartbeat on disconnect
+  req.on("close", () => {
+    clearInterval(heartbeat);
+  });
+});
 
 // Initialize Services
 const uploadService = new UploadService(minioClient);
@@ -247,46 +336,6 @@ app.get("/health", async (req, res) => {
     });
   }
 });
-
-// SSE endpoint - make sure this exists in your server
-app.get('/processing-status/:jobId', (req, res) => {
-  const jobId = req.params.jobId
-  console.log(`[SSE] Client connecting for job ${jobId}`)
-  
-  // Set SSE headers
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Cache-Control'
-  })
-  
-  // Store connection
-  sseConnections.set(jobId, res)
-  console.log(`[SSE] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`)
-  
-  // Send initial connection confirmation
-  const confirmationData = JSON.stringify({ 
-    type: 'connected', 
-    jobId,
-    message: 'SSE connection established'
-  })
-  
-  res.write(`data: ${confirmationData}\n\n`)
-  console.log(`[SSE] Sent connection confirmation for job ${jobId}`)
-  
-  // Handle client disconnect
-  req.on('close', () => {
-    console.log(`[SSE] Client disconnected for job ${jobId}`)
-    sseConnections.delete(jobId)
-  })
-  
-  req.on('error', (error) => {
-    console.error(`[SSE] Request error for job ${jobId}:`, error)
-    sseConnections.delete(jobId)
-  })
-})
 
 // GET /albums - List all albums (public access for album browsing)
 app.get("/albums", async (req, res) => {
@@ -559,6 +608,123 @@ app.post(
   }
 );
 
+// Background processing function for asynchronous uploads with SSE updates
+async function processFilesInBackground(
+  files,
+  bucketName,
+  folderPath,
+  startTime,
+  jobId
+) {
+  try {
+    console.log(
+      `[UPLOAD_BG] Starting background processing for ${files.length} files with job ID: ${jobId}`
+    );
+
+    // Process files
+    const uploadResults = [];
+    const errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      try {
+        console.log(
+          `[UPLOAD_BG] Processing file ${i + 1}/${files.length}: ${
+            file.originalname
+          }`
+        );
+
+        // Process the individual file
+        const result = await uploadService.processSingleFile(
+          file,
+          bucketName,
+          folderPath
+        );
+        uploadResults.push(result);
+
+        console.log(`[UPLOAD_BG] Successfully processed: ${file.originalname}`);
+      } catch (error) {
+        console.error(
+          `[UPLOAD_BG] Error processing file ${file.originalname}:`,
+          error.message
+        );
+        errors.push({
+          filename: file.originalname,
+          error: error.message,
+        });
+      }
+    }
+
+    const processingTime = Date.now() - startTime;
+    console.log(
+      `[UPLOAD_BG] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
+    );
+
+    // Send single completion message
+    if (errors.length === 0) {
+      sendSSEEvent(jobId, "complete", {
+        status: "success",
+        message: `All ${files.length} files processed successfully!`,
+        results: {
+          uploaded: uploadResults.length,
+          failed: 0,
+          processingTime: processingTime,
+        },
+      });
+    } else if (uploadResults.length === 0) {
+      sendSSEEvent(jobId, "complete", {
+        status: "failed",
+        message: `All files failed to process. Please check the files and try again.`,
+        results: {
+          uploaded: 0,
+          failed: errors.length,
+          processingTime: processingTime,
+        },
+        errors: errors,
+      });
+    } else {
+      sendSSEEvent(jobId, "complete", {
+        status: "partial",
+        message: `${uploadResults.length} files processed successfully, ${errors.length} failed.`,
+        results: {
+          uploaded: uploadResults.length,
+          failed: errors.length,
+          processingTime: processingTime,
+        },
+        errors: errors,
+      });
+    }
+
+    // Clean up SSE connections after 30 seconds
+    setTimeout(() => {
+      console.log(`[UPLOAD_BG] Cleaning up SSE connections for job ${jobId}`);
+      sseConnections.delete(jobId);
+    }, 300000);
+  } catch (error) {
+    const errorTime = Date.now() - startTime;
+    console.error(
+      `[UPLOAD_BG] Background processing error after ${errorTime}ms:`,
+      {
+        error: error.message,
+        stack: error.stack,
+      }
+    );
+
+    // Send error completion message
+    sendSSEEvent(jobId, "complete", {
+      status: "failed",
+      message: `Processing failed: ${error.message}`,
+      error: error.message,
+    });
+
+    // Clean up connections
+    setTimeout(() => {
+      sseConnections.delete(jobId);
+    }, 30000);
+  }
+}
+
 // POST /buckets/:bucketName/upload - Upload file(s) to a bucket
 app.post(
   "/buckets/:bucketName/upload",
@@ -701,8 +867,8 @@ async function startServer() {
     // Initialize database connection
     await initializeDatabase();
 
-    // Start HTTP server
-    app.listen(PORT, () => {
+    // Start HTTP server and store the reference
+    server = app.listen(PORT, () => {
       const authMode = process.env.AUTH_MODE || "demo";
       const k8sService =
         process.env.K8S_SERVICE_NAME || "photovault-api-service";
@@ -733,176 +899,77 @@ async function startServer() {
   }
 }
 
-// Background processing function for asynchronous uploads
-// Add detailed logging for background processing
-// Background processing function for asynchronous uploads with SSE updates
-async function processFilesInBackground(
-  files,
-  bucketName,
-  folderPath,
-  startTime,
-  jobId
-) {
-  try {
-    console.log(
-      `[UPLOAD_BG] Starting background processing for ${files.length} files with job ID: ${jobId}`
-    );
-
-    // Process files
-    const uploadResults = [];
-    const errors = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-
-      try {
-        console.log(
-          `[UPLOAD_BG] Processing file ${i + 1}/${files.length}: ${
-            file.originalname
-          }`
-        );
-
-        // Process the individual file
-        const result = await uploadService.processImageFile(
-          file,
-          bucketName,
-          folderPath
-        );
-        uploadResults.push(result);
-
-        console.log(`[UPLOAD_BG] Successfully processed: ${file.originalname}`);
-      } catch (error) {
-        console.error(
-          `[UPLOAD_BG] Error processing file ${file.originalname}:`,
-          error.message
-        );
-        errors.push({
-          filename: file.originalname,
-          error: error.message,
-        });
-      }
-    }
-
-    const processingTime = Date.now() - startTime;
-    console.log(
-      `[UPLOAD_BG] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
-    );
-
-    // Send single completion message
-    if (errors.length === 0) {
-      sendSSEEvent(jobId, "complete", {
-        status: "success",
-        message: `All ${files.length} files processed successfully!`,
-        results: {
-          uploaded: uploadResults.length,
-          failed: 0,
-          processingTime: processingTime,
-        },
-      });
-    } else if (uploadResults.length === 0) {
-      sendSSEEvent(jobId, "complete", {
-        status: "failed",
-        message: `All files failed to process. Please check the files and try again.`,
-        results: {
-          uploaded: 0,
-          failed: errors.length,
-          processingTime: processingTime,
-        },
-        errors: errors,
-      });
-    } else {
-      sendSSEEvent(jobId, "complete", {
-        status: "partial",
-        message: `${uploadResults.length} files processed successfully, ${errors.length} failed.`,
-        results: {
-          uploaded: uploadResults.length,
-          failed: errors.length,
-          processingTime: processingTime,
-        },
-        errors: errors,
-      });
-    }
-
-    // Clean up SSE connections after 30 seconds
-    setTimeout(() => {
-      console.log(`[UPLOAD_BG] Cleaning up SSE connections for job ${jobId}`);
-      sseConnections.delete(jobId);
-    }, 300000);
-  } catch (error) {
-    const errorTime = Date.now() - startTime;
-    console.error(
-      `[UPLOAD_BG] Background processing error after ${errorTime}ms:`,
-      {
-        error: error.message,
-        stack: error.stack,
-      }
-    );
-
-    // Send error completion message
-    sendSSEEvent(jobId, "complete", {
-      status: "failed",
-      message: `Processing failed: ${error.message}`,
-      error: error.message,
-    });
-
-    // Clean up connections
-    setTimeout(() => {
-      sseConnections.delete(jobId);
-    }, 30000);
-  }
-}
-// Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("Shutting down server...");
-  if (process.env.AUTH_MODE === "database") {
-    await database.close();
-  }
-  process.exit(0);
-});
 
-// Initialize database connection if not in demo mode
-async function initializeDatabase() {
-  const authMode = process.env.AUTH_MODE;
-
-  if (authMode === "database") {
-    try {
-      await database.initialize();
-    } catch (error) {
-      console.error("Database initialization failed:", error.message);
-      process.env.AUTH_MODE = "demo";
-    }
-  } else {
-    //console.log('Running in demo authentication mode')
-  }
-}
-
-async function countAlbums(bucketName) {
-  return new Promise((resolve, reject) => {
-    const folderSet = new Set();
-
-    const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
-
-    objectsStream.on("data", (obj) => {
-      const key = obj.name;
-      const topLevelPrefix = key.split("/")[0];
-      if (key.includes("/")) {
-        folderSet.add(topLevelPrefix);
+  // Close all SSE connections - fixed for your actual data structure
+  console.log(
+    `[SHUTDOWN] Closing ${sseConnections.size} active SSE job streams...`
+  );
+  sseConnections.forEach((connections, jobId) => {
+    connections.forEach((res, connectionId) => {
+      try {
+        res.write("event: shutdown\n");
+        res.write("data: Server is shutting down\n\n");
+        res.end();
+      } catch (error) {
+        console.error(
+          `[SHUTDOWN] Error closing connection ${connectionId}:`,
+          error.message
+        );
       }
     });
+  });
 
-    objectsStream.on("end", () => {
-      const albums = [...folderSet];
-      console.log(`Number of top-level folders: ${albums.length}`);
-      console.log(albums);
-      resolve(albums);
+  // Clear the connections map
+  sseConnections.clear();
+
+  // Close the HTTP server
+  if (server) {
+    server.close(() => {
+      console.log("[SHUTDOWN] HTTP server closed");
+      process.exit(0);
     });
+  } else {
+    console.log("[SHUTDOWN] No server instance to close");
+    process.exit(0);
+  }
 
-    objectsStream.on("error", (err) => {
-      console.error("Error listing objects:", err);
-      reject(err);
+  // Force shutdown after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error("[SHUTDOWN] Forced shutdown after timeout");
+    process.exit(1);
+  }, 10000);
+});
+
+// Handle SIGTERM as well (for production deployments)
+process.on("SIGTERM", async () => {
+  console.log("Received SIGTERM, shutting down gracefully...");
+
+  // Close all SSE connections
+  console.log(
+    `[SHUTDOWN] Closing ${sseConnections.size} active SSE connections...`
+  );
+  sseConnections.forEach((connections, userId) => {
+    connections.forEach((res) => {
+      res.write("event: shutdown\n");
+      res.write("data: Server is shutting down\n\n");
+      res.end();
     });
   });
-}
 
-// Start the server
-startServer();
+  // Clear the connections map
+  sseConnections.clear();
+
+  // Close the HTTP server
+  server.close(() => {
+    console.log("[SHUTDOWN] HTTP server closed");
+    process.exit(0);
+  });
+
+  // Force shutdown after 10 seconds
+  setTimeout(() => {
+    console.error("[SHUTDOWN] Forced shutdown after timeout");
+    process.exit(1);
+  }, 10000);
+});
