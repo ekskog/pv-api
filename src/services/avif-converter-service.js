@@ -99,53 +99,34 @@ class AvifConverterService {
    * @returns {Object} Conversion result with AVIF files
    */
   async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
-    try {
-      //console.log(`[AVIF_CONVERTER] Converting image: ${originalName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)}MB, ${mimeType})`);
-      
-      // Check if file type is supported for AVIF conversion
-      const isHEIC = /\.(heic|heif)$/i.test(originalName);
-      const isJPEG = /\.(jpg|jpeg)$/i.test(originalName);
-      
-      if (!isHEIC && !isJPEG) {
-        throw new Error(`Unsupported file type for AVIF conversion: ${originalName}`);
-      }
-      
+    try {            
       // Determine which service to use based on file type
       let serviceUrl, serviceTimeout, serviceName;
-      
-      if (isJPEG && this.jpeg2avifUrl) {
+
+      if (mimeType === "image/jpeg"  && this.jpeg2avifUrl) {
         // Use the new memory-efficient JPEG2AVIF microservice for JPEG files
         serviceUrl = this.jpeg2avifUrl;
         serviceTimeout = this.jpeg2avifTimeout;
         serviceName = 'JPEG2AVIF';
         console.log(`[AVIF_CONVERTER] Using JPEG2AVIF microservice for ${originalName}`);
-      } else if (isHEIC) {
+      } else if (mimeType === "image/heic" && this.heic2avifUrl) {
         // Use the existing HEIC converter for HEIC files
-        serviceUrl = this.baseUrl;
-        serviceTimeout = this.timeout;
+        serviceUrl = this.heic2avifUrl;
+        serviceTimeout = this.heic2avifTimeout;
         serviceName = 'HEIC_CONVERTER';
-        console.log(`[AVIF_CONVERTER] Using HEIC converter for ${originalName}`);
-      } else {
-        // NO FALLBACKS! Fail if the appropriate service is not configured
-        if (isJPEG) {
-          throw new Error(`JPEG2AVIF service not configured for JPEG file: ${originalName}`);
-        } else {
-          throw new Error(`No appropriate service configured for file: ${originalName}`);
-        }
+        console.log(`[AVIF_CONVERTER LINE 117] Using HEIC converter for ${originalName}`);
       }
       
       // Use single endpoint for all supported formats
       const endpoint = '/convert';
-      
       // Create form data for multipart upload using native FormData
       const formData = new FormData();
-      
       // Create a Blob from the buffer with proper type
       const blob = new Blob([fileBuffer], { type: mimeType });
       
       // Append the blob as a file with proper filename
       // Note: JPEG2AVIF service expects 'image' field, HEIC service expects 'file' field
-      const fieldName = serviceName === 'JPEG2AVIF' ? 'image' : 'file';
+      const fieldName = 'image';
       formData.append(fieldName, blob, originalName);
 
       console.log(`[AVIF_CONVERTER] Sending conversion request to ${serviceName}: ${serviceUrl}${endpoint}`);
@@ -190,23 +171,36 @@ class AvifConverterService {
         });
 
         console.log(`[AVIF_CONVERTER] ${serviceName} processed: full-size (${responseData.fullSize.size}B)`);
-      } else {
-        // Handle existing HEIC converter response format (variants array)
-        if (!responseData.variants || responseData.variants.length === 0) {
-          throw new Error(`Conversion failed (${serviceName}): No variants returned from microservice`);
+      } else if (serviceName === 'HEIC_CONVERTER') {
+        // Remove any remaining callback logic from HEIC converter
+        if (!responseData.fullSize) {
+          throw new Error(`Conversion failed (${serviceName}): Missing fullSize in response`);
         }
 
-        for (const variant of responseData.variants) {
-          files.push({
-            filename: variant.filename,
-            content: variant.content, // Already base64 encoded
-            size: variant.size,
-            mimetype: variant.mimetype,
-            variant: variant.variant
-          });
+        const baseName = originalName.replace(/\.(heic)$/i, '');
+
+        // Process full-size only
+        files.push({
+          filename: `${baseName}.avif`,
+          content: responseData.fullSize.data, // Already base64 encoded
+          size: responseData.fullSize.size,
+          mimetype: 'image/avif',
+          variant: 'full'
+        });
+
+        console.log(`[AVIF_CONVERTER] ${serviceName} processed: full-size (${responseData.fullSize.size}B)`);
+
+        // Memory management and cleanup (align with JPEG flow)
+        const memoryBefore = process.memoryUsage().rss / 1024 / 1024;
+        console.log(`[CONVERT] Memory before cleanup: ${memoryBefore.toFixed(2)}MB`);
+
+        // Force garbage collection
+        if (global.gc) {
+          global.gc();
         }
 
-        console.log(`[AVIF_CONVERTER] ${serviceName} returned ${responseData.variants.length} variants for ${originalName}`);
+        const memoryAfter = process.memoryUsage().rss / 1024 / 1024;
+        console.log(`[CONVERT] Memory after cleanup: ${memoryAfter.toFixed(2)}MB (freed ${(memoryBefore - memoryAfter).toFixed(2)}MB)`);
       }
 
       //console.log(`[AVIF_CONVERTER] Successfully processed ${files.length} variants`);

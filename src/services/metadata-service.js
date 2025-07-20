@@ -18,7 +18,7 @@ class MetadataService {
    * Extract EXIF metadata from image buffer (for upload-time processing)
    * This is the main function for the upload workflow
    */
-  extractExifFromBuffer(imageBuffer, filename) {
+  async extractExifFromBuffer(imageBuffer, filename) {
     try {
       const tags = ExifReader.load(imageBuffer);
       
@@ -64,21 +64,8 @@ class MetadataService {
 
       // Extract GPS coordinates with detailed debugging
       //console.log(`[GPS DEBUG] Checking GPS tags for ${filename}:`);
-      //console.log(`[GPS DEBUG] Available GPS tags: ${Object.keys(tags).filter(k => k.startsWith('GPS')).join(', ')}`);
+      // console.log(`[GPS DEBUG] Available GPS tags: ${Object.keys(tags).filter(k => k.startsWith('GPS')).join(', ')}`);
       
-      if (tags.GPSLatitude) {
-        //console.log(`[GPS DEBUG] GPSLatitude found:`, tags.GPSLatitude);
-        //console.log(`[GPS DEBUG] GPSLatitudeRef:`, tags.GPSLatitudeRef);
-      } else {
-        //console.log(`[GPS DEBUG] No GPSLatitude tag found`);
-      }
-      
-      if (tags.GPSLongitude) {
-        //console.log(`[GPS DEBUG] GPSLongitude found:`, tags.GPSLongitude);
-        //console.log(`[GPS DEBUG] GPSLongitudeRef:`, tags.GPSLongitudeRef);
-      } else {
-        //console.log(`[GPS DEBUG] No GPSLongitude tag found`);
-      }
 
       // Extract GPS coordinates
       if (tags.GPSLatitude && tags.GPSLongitude) {
@@ -90,6 +77,8 @@ class MetadataService {
         }
       }
 
+      console.log(`[METADATA] Extracted EXIF data for ${filename}`); 
+      console.log(exifData);// Uncomment for debugging
       return exifData;
 
     } catch (error) {
@@ -241,6 +230,7 @@ class MetadataService {
    * @param {Object} uploadInfo - Upload information (etag, size, etc.)
    */
   async updateFolderMetadata(bucketName, objectName, extractedExifData, uploadInfo) {
+    console.log(`[METADATA] Updating folder metadata for ${objectName}...`);
     try {
       
       const folderName = this.getFolderName(objectName);

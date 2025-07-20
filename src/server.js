@@ -12,7 +12,7 @@ const authRoutes = require("./routes/auth");
 const { authenticateToken, requireRole } = require("./middleware/auth");
 
 // Store active SSE connections by job ID
-const sseConnections = new Map()
+const sseConnections = new Map();
 
 const sendSSEEvent = (jobId, eventType, data) => {
   const connection = sseConnections.get(jobId);
@@ -178,7 +178,7 @@ app.get("/health", async (req, res) => {
     // Determine overall health status based on MinIO and BOTH converter services
     // All three must be healthy for the API to function properly
     const isHealthy =
-      albums.length > 0 && jpegConverterHealthy && heicConverterHealthy;
+      jpegConverterHealthy && heicConverterHealthy && albums.length > -1;
     const status = isHealthy ? "healthy" : "degraded";
 
     const warnings = [];
@@ -249,44 +249,46 @@ app.get("/health", async (req, res) => {
 });
 
 // SSE endpoint - make sure this exists in your server
-app.get('/processing-status/:jobId', (req, res) => {
-  const jobId = req.params.jobId
-  console.log(`[SSE] Client connecting for job ${jobId}`)
-  
+app.get("/processing-status/:jobId", (req, res) => {
+  const jobId = req.params.jobId;
+  console.log(`[SSE] Client connecting for job ${jobId}`);
+
   // Set SSE headers
   res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Cache-Control'
-  })
-  
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Cache-Control",
+  });
+
   // Store connection
-  sseConnections.set(jobId, res)
-  console.log(`[SSE] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`)
-  
+  sseConnections.set(jobId, res);
+  console.log(
+    `[SSE] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`
+  );
+
   // Send initial connection confirmation
-  const confirmationData = JSON.stringify({ 
-    type: 'connected', 
+  const confirmationData = JSON.stringify({
+    type: "connected",
     jobId,
-    message: 'SSE connection established'
-  })
-  
-  res.write(`data: ${confirmationData}\n\n`)
-  console.log(`[SSE] Sent connection confirmation for job ${jobId}`)
-  
+    message: "SSE connection established",
+  });
+
+  res.write(`data: ${confirmationData}\n\n`);
+  console.log(`[SSE] Sent connection confirmation for job ${jobId}`);
+
   // Handle client disconnect
-  req.on('close', () => {
-    console.log(`[SSE] Client disconnected for job ${jobId}`)
-    sseConnections.delete(jobId)
-  })
-  
-  req.on('error', (error) => {
-    console.error(`[SSE] Request error for job ${jobId}:`, error)
-    sseConnections.delete(jobId)
-  })
-})
+  req.on("close", () => {
+    console.log(`[SSE] Client disconnected for job ${jobId}`);
+    sseConnections.delete(jobId);
+  });
+
+  req.on("error", (error) => {
+    console.error(`[SSE] Request error for job ${jobId}:`, error);
+    sseConnections.delete(jobId);
+  });
+});
 
 // GET /albums - List all albums (public access for album browsing)
 app.get("/albums", async (req, res) => {
@@ -330,6 +332,9 @@ app.get("/albums", async (req, res) => {
 });
 
 app.get("/buckets/:bucketName/objects", async (req, res) => {
+  console.log(
+    `[GET OBJECTS] Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}, recursive: ${req.query.recursive}`
+  );
   try {
     const { bucketName } = req.params;
     const { prefix = "", recursive = "false" } = req.query;
@@ -443,26 +448,10 @@ app.post(
 
       console.log(`[FOLDER_CREATE] Extracted folderPath: "${folderPath}"`);
 
-      if (!folderPath) {
-        console.log(`[FOLDER_CREATE] ERROR: Folder path is required`);
-        return res.status(400).json({
-          success: false,
-          error: "Folder path is required",
-        });
-      }
-
       // Check if bucket exists
       console.log(`[FOLDER_CREATE] Checking if bucket exists: ${bucketName}`);
       const bucketExists = await minioClient.bucketExists(bucketName);
       console.log(`[FOLDER_CREATE] Bucket exists: ${bucketExists}`);
-
-      if (!bucketExists) {
-        console.log(`[FOLDER_CREATE] ERROR: Bucket not found`);
-        return res.status(404).json({
-          success: false,
-          error: "Bucket not found",
-        });
-      }
 
       // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
       let cleanPath = folderPath.trim();
@@ -573,7 +562,7 @@ app.post(
       const { folderPath = "" } = req.body;
       const files = req.files;
 
-      console.log(`[UPLOAD] Upload request received:`, {
+      console.log(`[SERVER.JS] Upload request received:`, {
         jobId,
         bucket: bucketName,
         folder: folderPath,
@@ -583,7 +572,7 @@ app.post(
       });
 
       if (!files || files.length === 0) {
-        console.error("[UPLOAD] Upload failed: No files provided");
+        console.error("[SERVER.JS] Upload failed: No files provided");
         return res.status(400).json({
           success: false,
           error: "No files provided",
@@ -591,7 +580,7 @@ app.post(
       }
 
       console.log(
-        "[UPLOAD] Files to upload:",
+        "[SERVER.JS - line 583] Files to upload:",
         files.map(
           (file, index) =>
             `${index + 1}. ${file.originalname} (${(
@@ -615,17 +604,10 @@ app.post(
         },
       };
 
-      console.log(`[UPLOAD] Returning immediate response to user:`, {
-        statusCode: 200,
-        filesReceived: files.length,
-        jobId: jobId,
-        totalTime: `${Date.now() - startTime}ms`,
-      });
-
       res.status(200).json(response);
 
-      // Now process files in background with SSE updates
       processFilesInBackground(files, bucketName, folderPath, startTime, jobId);
+
     } catch (error) {
       const errorTime = Date.now() - startTime;
       console.error(`[UPLOAD] Upload error occurred after ${errorTime}ms:`, {
@@ -736,19 +718,8 @@ async function startServer() {
 // Background processing function for asynchronous uploads
 // Add detailed logging for background processing
 // Background processing function for asynchronous uploads with SSE updates
-async function processFilesInBackground(
-  files,
-  bucketName,
-  folderPath,
-  startTime,
-  jobId
-) {
+async function processFilesInBackground(files, bucketName, folderPath, startTime, jobId) {
   try {
-    console.log(
-      `[UPLOAD_BG] Starting background processing for ${files.length} files with job ID: ${jobId}`
-    );
-
-    // Process files
     const uploadResults = [];
     const errors = [];
 
@@ -756,24 +727,20 @@ async function processFilesInBackground(
       const file = files[i];
 
       try {
-        console.log(
-          `[UPLOAD_BG] Processing file ${i + 1}/${files.length}: ${
-            file.originalname
-          }`
-        );
+        console.log(`[SERVER.JS] Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
-        const result = await uploadService.processImageFile(
+        const result = await uploadService.processAndUploadFile(
           file,
           bucketName,
           folderPath
         );
         uploadResults.push(result);
 
-        console.log(`[UPLOAD_BG] Successfully processed: ${file.originalname}`);
+        console.log(`[SERVER.JS] Successfully processed: ${file.originalname}`);
       } catch (error) {
         console.error(
-          `[UPLOAD_BG] Error processing file ${file.originalname}:`,
+          `[SERVER.JS]] Error processing file ${file.originalname}:`,
           error.message
         );
         errors.push({
@@ -785,7 +752,7 @@ async function processFilesInBackground(
 
     const processingTime = Date.now() - startTime;
     console.log(
-      `[UPLOAD_BG] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
+      `[SERVER.JS] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
     );
 
     // Send single completion message
