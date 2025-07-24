@@ -94,7 +94,7 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       variant: 'full'
     });
 
-        cat ~/.kube/config | base64(`[AVIF_CONVERTER] Processed: full-size (${responseData.data.fullSize.size}B)`);
+    console.log(`[AVIF_CONVERTER] Processed: full-size (${responseData.data.fullSize.size}B)`);
 
     return {
       success: true,
