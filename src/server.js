@@ -111,87 +111,35 @@ app.get("/health", async (req, res) => {
       `[HEALTH] MinIO connection successful, found ${albums.length} albums`
     );
 
-    // Check JPEG converter service
-    let jpegConverterHealthy = false;
+    // Check single converter service
+    let converterHealthy = false;
     try {
-      // Get the converter URL from environment, with Kubernetes service URL as fallback
-      const jpegConverterUrl = process.env.JPEG2AVIF_CONVERTER_URL;
+      const converterUrl = process.env.AVIF_CONVERTER_URL;
 
       console.log(
-        `[HEALTH] Testing JPEG converter connection at ${jpegConverterUrl}`
+        `[HEALTH] Testing converter connection at ${converterUrl}`
       );
 
-      const jpegResponse = await fetch(`${jpegConverterUrl}/health`, {
-        timeout: parseInt(process.env.JPEG2AVIF_CONVERTER_TIMEOUT),
+      const response = await fetch(`${converterUrl}/health`, {
+        timeout: parseInt(process.env.AVIF_CONVERTER_TIMEOUT),
       });
 
-      if (jpegResponse.ok) {
-        jpegConverterHealthy = true;
-        console.log(`[HEALTH] JPEG converter is healthy`);
+      if (response.ok) {
+        converterHealthy = true;
+        console.log(`[HEALTH] Converter is healthy`);
       } else {
         console.error(
-          `[HEALTH] JPEG converter responded with status: ${jpegResponse.status}`
+          `[HEALTH] Converter responded with status: ${response.status}`
         );
       }
     } catch (error) {
       console.error(
-        `[HEALTH] JPEG converter health check failed: ${error.message}`
+        `[HEALTH] Converter health check failed: ${error.message}`
       );
     }
 
-    // Check HEIC converter service
-    let heicConverterHealthy = false;
-    try {
-      // Get the converter URL from environment, with Kubernetes service URL as fallback
-      const heicConverterUrl = process.env.HEIC2AVIF_CONVERTER_URL;
-
-      console.log(
-        `[HEALTH] Testing HEIC converter connection at ${heicConverterUrl}`
-      );
-      console.log(
-        `[HEALTH] Using timeout: ${parseInt(
-          process.env.HEIC2AVIF_CONVERTER_TIMEOUT
-        )}ms`
-      );
-
-      const heicResponse = await fetch(`${heicConverterUrl}/health`, {
-        timeout: parseInt(process.env.HEIC2AVIF_CONVERTER_TIMEOUT),
-      });
-
-      if (heicResponse.ok) {
-        heicConverterHealthy = true;
-        console.log(`[HEALTH] HEIC converter is healthy`);
-      } else {
-        console.error(
-          `[HEALTH] HEIC converter responded with status: ${heicResponse.status}`
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[HEALTH] HEIC converter health check failed: ${error.message}`
-      );
-      console.error(
-        `[HEALTH] Make sure the converter service is running and accessible via K8s service name`
-      );
-    }
-
-    // Determine overall health status based on MinIO and BOTH converter services
-    // All three must be healthy for the API to function properly
-    const isHealthy =
-      jpegConverterHealthy && heicConverterHealthy && albums.length > -1;
+    const isHealthy = converterHealthy && albums.length > -1;
     const status = isHealthy ? "healthy" : "degraded";
-
-    const warnings = [];
-    if (!jpegConverterHealthy) {
-      warnings.push(
-        "JPEG converter service is unavailable - image conversion will fail"
-      );
-    }
-    if (!heicConverterHealthy) {
-      warnings.push(
-        "HEIC converter service is unavailable - HEIC image conversion will fail"
-      );
-    }
 
     const healthStatus = {
       status,
@@ -201,21 +149,11 @@ app.get("/health", async (req, res) => {
         albums: albums.length,
         endpoint: process.env.MINIO_ENDPOINT,
       },
-      converters: {
-        jpeg: {
-          connected: jpegConverterHealthy,
-          endpoint: process.env.JPEG2AVIF_CONVERTER_URL,
-        },
-        heic: {
-          connected: heicConverterHealthy,
-          endpoint: process.env.HEIC2AVIF_CONVERTER_URL,
-        },
+      converter: {
+        connected: converterHealthy,
+        endpoint: process.env.AVIF_CONVERTER_URL,
       },
     };
-
-    if (warnings.length > 0) {
-      healthStatus.warnings = warnings;
-    }
 
     const responseStatus = isHealthy ? 200 : 503;
     console.log(
@@ -232,17 +170,10 @@ app.get("/health", async (req, res) => {
         connected: false,
         error: error.message,
       },
-      converters: {
-        jpeg: {
-          connected: false,
-          endpoint: process.env.JPEG2AVIF_CONVERTER_URL,
-          error: "Could not verify due to MinIO connection failure",
-        },
-        heic: {
-          connected: false,
-          endpoint: process.env.HEIC2AVIF_CONVERTER_URL,
-          error: "Could not verify due to MinIO connection failure",
-        },
+      converter: {
+        connected: false,
+        endpoint: process.env.AVIF_CONVERTER_URL,
+        error: "Could not verify due to MinIO connection failure",
       },
     });
   }

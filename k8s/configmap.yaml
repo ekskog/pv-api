@@ -8,11 +8,5 @@ data:
   NODE_ENV: "production"
   API_PREFIX: "/api/v1"
   # AVIF Converter Services
-  AVIF_CONVERTER_URL: "http://avif-converter.webapps.svc.cluster.local:3000"
+  AVIF_CONVERTER_URL: "http://avif-converter-service.webapps.svc.cluster.local:3000"
   AVIF_CONVERTER_TIMEOUT: "300000"
-  JPEG2AVIF_CONVERTER_URL: "http://jpg2avif-py-service.webapps.svc.cluster.local:3000"
-  JPEG2AVIF_CONVERTER_TIMEOUT: "300000"
-  # Redis Configuration
-  REDIS_HOST: "redis.data.svc.cluster.local"
-  REDIS_PORT: "6379"
-  REDIS_DB: "2"

