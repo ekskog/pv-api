@@ -119,6 +119,8 @@ app.get("/health", async (req, res) => {
         timeout: parseInt(process.env.AVIF_CONVERTER_TIMEOUT),
       });
 
+      debugHealth(`Converter response status: ${response.status}`);
+
       if (response.ok) {
         converterHealthy = true;
         debugHealth(`Converter is healthy`);
