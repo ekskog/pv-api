@@ -21,6 +21,8 @@ const debugAuth = debug("photovault:auth");
 const debugAlbum = debug("photovault:album");
 const debugEndpoints = debug("photovault:endpoints");
 
+console.log('DEBUG:', process.env.DEBUG);
+
 // Store active SSE connections by job ID
 const sseConnections = new Map();
 
