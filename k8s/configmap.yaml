@@ -9,5 +9,5 @@ data:
   DEBUG: "photovault:*,-express:*,-nodemon:*,-express-router:*"
   API_PREFIX: "/api/v1"
   # AVIF Converter Services
-  AVIF_CONVERTER_URL: "http://avif-converter-service.webapps.svc.cluster.local:3000"
+  AVIF_CONVERTER_URL: "http://avif-converter-service.webapps.svc.cluster.local"
   AVIF_CONVERTER_TIMEOUT: "300000"
