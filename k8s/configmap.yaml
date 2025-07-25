@@ -6,6 +6,7 @@ metadata:
 data:
   PORT: "3001"
   NODE_ENV: "production"
+  DEBUG: "DEBUG=photovault:*,-express:*,-nodemon:*,-express-router:* nodemon src/server.js"
   API_PREFIX: "/api/v1"
   # AVIF Converter Services
   AVIF_CONVERTER_URL: "http://avif-converter-service.webapps.svc.cluster.local:3000"

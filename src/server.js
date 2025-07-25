@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
-const morgan = require("morgan");
+const debug = require("debug");
 const { Client } = require("minio");
 const { v4: uuidv4 } = require("uuid");
 
@@ -11,13 +11,23 @@ const database = require("./config/database");
 const authRoutes = require("./routes/auth");
 const { authenticateToken, requireRole } = require("./middleware/auth");
 
+// Debug namespaces
+const debugServer = debug("photovault:server");
+const debugSSE = debug("photovault:sse");
+const debugHealth = debug("photovault:health");
+const debugUpload = debug("photovault:upload");
+const debugMinio = debug("photovault:minio");
+const debugAuth = debug("photovault:auth");
+const debugAlbum = debug("photovault:album");
+const debugEndpoints = debug("photovault:endpoints");
+
 // Store active SSE connections by job ID
 const sseConnections = new Map();
 
 const sendSSEEvent = (jobId, eventType, data) => {
   const connection = sseConnections.get(jobId);
   if (!connection) {
-    console.log(`[SSE] No connection found for job ${jobId}`);
+    debugSSE(`No connection found for job ${jobId}`);
     return;
   }
 
@@ -31,9 +41,9 @@ const sendSSEEvent = (jobId, eventType, data) => {
 
   try {
     connection.write(message);
-    console.log(`[SSE] Event sent successfully to job ${jobId}`);
+    debugSSE(`Event sent successfully to job ${jobId}`);
   } catch (error) {
-    console.error(`[SSE] Error sending to job ${jobId}:`, error.message);
+    debugSSE(`Error sending to job ${jobId}: ${error.message}`);
     // Remove failed connection
     sseConnections.delete(jobId);
   }
@@ -80,35 +90,20 @@ app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 app.use("/auth", authRoutes);
 
-// Add Morgan for HTTP request logging
-app.use(
-  morgan(
-    ":method :url :status :response-time ms - :res[content-length] bytes",
-    {
-      stream: {
-        write: (message) => {
-          console.log(`[HTTP] ${message.trim()}`);
-        },
-      },
-    }
-  )
-);
-
 // Initialize Services
 const uploadService = new UploadService(minioClient);
 
 // Health check route
 app.get("/health", async (req, res) => {
-  console.log(
-    `[HEALTH] Health check request received from ${
-      req.ip
-    } at ${new Date().toISOString()}`
+  debugEndpoints('get /health');
+  debugHealth(
+    `Health check request received from ${req.ip} at ${new Date().toISOString()}`
   );
   try {
     // Test MinIO connection by listing albums
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
-    console.log(
-      `[HEALTH] MinIO connection successful, found ${albums.length} albums`
+    debugHealth(
+      `MinIO connection successful, found ${albums.length} albums`
     );
 
     // Check single converter service
@@ -116,9 +111,7 @@ app.get("/health", async (req, res) => {
     try {
       const converterUrl = process.env.AVIF_CONVERTER_URL;
 
-      console.log(
-        `[HEALTH] Testing converter connection at ${converterUrl}`
-      );
+      debugHealth(`Testing converter connection at ${converterUrl}`);
 
       const response = await fetch(`${converterUrl}/health`, {
         timeout: parseInt(process.env.AVIF_CONVERTER_TIMEOUT),
@@ -126,16 +119,12 @@ app.get("/health", async (req, res) => {
 
       if (response.ok) {
         converterHealthy = true;
-        console.log(`[HEALTH] Converter is healthy`);
+        debugHealth(`Converter is healthy`);
       } else {
-        console.error(
-          `[HEALTH] Converter responded with status: ${response.status}`
-        );
+        debugHealth(`Converter responded with status: ${response.status}`);
       }
     } catch (error) {
-      console.error(
-        `[HEALTH] Converter health check failed: ${error.message}`
-      );
+      debugHealth(`Converter health check failed: ${error.message}`);
     }
 
     const isHealthy = converterHealthy && albums.length > -1;
@@ -156,12 +145,12 @@ app.get("/health", async (req, res) => {
     };
 
     const responseStatus = isHealthy ? 200 : 503;
-    console.log(
-      `[HEALTH] Sending response with status: ${status}, code: ${responseStatus}`
+    debugHealth(
+      `Sending response with status: ${status}, code: ${responseStatus}`
     );
     res.status(responseStatus).json(healthStatus);
   } catch (error) {
-    console.error(`[HEALTH] Error during health check: ${error.message}`);
+    debugHealth(`Error during health check: ${error.message}`);
 
     res.status(503).json({
       status: "unhealthy",
@@ -181,8 +170,10 @@ app.get("/health", async (req, res) => {
 
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
+    debugEndpoints('get /processing-status/:jobId');
+
   const jobId = req.params.jobId;
-  console.log(`[SSE] Client connecting for job ${jobId}`);
+  debugSSE(`Client connecting for job ${jobId}`);
 
   // Set SSE headers
   res.writeHead(200, {
@@ -195,8 +186,8 @@ app.get("/processing-status/:jobId", (req, res) => {
 
   // Store connection
   sseConnections.set(jobId, res);
-  console.log(
-    `[SSE] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`
+  debugSSE(
+    `Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`
   );
 
   // Send initial connection confirmation
@@ -207,22 +198,23 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   res.write(`data: ${confirmationData}\n\n`);
-  console.log(`[SSE] Sent connection confirmation for job ${jobId}`);
+  debugSSE(`Sent connection confirmation for job ${jobId}`);
 
   // Handle client disconnect
   req.on("close", () => {
-    console.log(`[SSE] Client disconnected for job ${jobId}`);
+    debugSSE(`Client disconnected for job ${jobId}`);
     sseConnections.delete(jobId);
   });
 
   req.on("error", (error) => {
-    console.error(`[SSE] Request error for job ${jobId}:`, error);
+    debugSSE(`Request error for job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   });
 });
 
 // GET /albums - List all albums (public access for album browsing)
 app.get("/albums", async (req, res) => {
+  debugEndpoints('get /albums');
   try {
     const folderSet = new Set();
 
@@ -241,12 +233,12 @@ app.get("/albums", async (req, res) => {
     });
 
     objectsStream.on("end", () => {
-      console.log(`Number of top-level folders: ${folderSet.size}`);
-      console.log([...folderSet]);
+      debugMinio(`Number of top-level folders: ${folderSet.size}`);
+      debugMinio([...folderSet]);
     });
 
     objectsStream.on("error", (err) => {
-      console.error("Error listing objects:", err);
+      debugMinio("Error listing objects:", err);
     });
     res.json({
       success: true,
@@ -263,8 +255,9 @@ app.get("/albums", async (req, res) => {
 });
 
 app.get("/buckets/:bucketName/objects", async (req, res) => {
-  console.log(
-    `[GET OBJECTS] Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}, recursive: ${req.query.recursive}`
+  debugEndpoints('get /buckets/:bucketName/objects');
+  debugMinio(
+    `Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}, recursive: ${req.query.recursive}`
   );
   try {
     const { bucketName } = req.params;
@@ -359,7 +352,7 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
 
     res.json(responseData);
   } catch (error) {
-    // debugService.server.error('Error in GET /buckets/:bucketName/objects:', error.message)
+    debugMinio('Error in GET /buckets/:bucketName/objects:', error.message);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -373,16 +366,17 @@ app.post(
   authenticateToken,
   requireRole("admin"),
   async (req, res) => {
+  debugEndpoints('post /buckets/:bucketName/folders');
     try {
       const { bucketName } = req.params;
       const { folderPath } = req.body;
 
-      console.log(`[FOLDER_CREATE] Extracted folderPath: "${folderPath}"`);
+      debugAlbum(`Extracted folderPath: "${folderPath}"`);
 
       // Check if bucket exists
-      console.log(`[FOLDER_CREATE] Checking if bucket exists: ${bucketName}`);
+      debugAlbum(`Checking if bucket exists: ${bucketName}`);
       const bucketExists = await minioClient.bucketExists(bucketName);
-      console.log(`[FOLDER_CREATE] Bucket exists: ${bucketExists}`);
+      debugAlbum(`Bucket exists: ${bucketExists}`);
 
       // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
       let cleanPath = folderPath.trim();
@@ -391,9 +385,7 @@ app.post(
       cleanPath = cleanPath.replace(/\/+/g, "/"); // Replace multiple slashes with single slash
 
       if (!cleanPath) {
-        console.log(
-          `[FOLDER_CREATE] ERROR: Invalid folder path after cleaning`
-        );
+        debugAlbum(`ERROR: Invalid folder path after cleaning`);
         return res.status(400).json({
           success: false,
           error: "Invalid folder path",
@@ -401,11 +393,11 @@ app.post(
       }
 
       const normalizedPath = `${cleanPath}/`;
-      console.log(`[FOLDER_CREATE] Final normalized path: "${normalizedPath}"`);
+      debugAlbum(`Final normalized path: "${normalizedPath}"`);
 
       // Check if folder already exists by looking for any objects with this prefix
-      console.log(
-        `[FOLDER_CREATE] Checking for existing objects with prefix: "${normalizedPath}"`
+      debugAlbum(
+        `Checking for existing objects with prefix: "${normalizedPath}"`
       );
       const existingObjects = [];
       const stream = minioClient.listObjectsV2(
@@ -415,14 +407,14 @@ app.post(
       );
 
       for await (const obj of stream) {
-        console.log(`[FOLDER_CREATE] Found existing object: ${obj.name}`);
+        debugAlbum(`Found existing object: ${obj.name}`);
         existingObjects.push(obj);
         break; // We only need to check if any object exists with this prefix
       }
 
       if (existingObjects.length > 0) {
-        console.log(
-          `[FOLDER_CREATE] ERROR: Folder already exists (${existingObjects.length} objects found)`
+        debugAlbum(
+          `ERROR: Folder already exists (${existingObjects.length} objects found)`
         );
         return res.status(409).json({
           success: false,
@@ -485,6 +477,7 @@ app.post(
   authenticateToken,
   upload.array("files"),
   async (req, res) => {
+    debugEndpoints('post /buckets/:bucketName/upload');
     const startTime = Date.now();
     const jobId = uuidv4(); // Generate unique job ID for this upload
 
@@ -493,7 +486,7 @@ app.post(
       const { folderPath = "" } = req.body;
       const files = req.files;
 
-      console.log(`[SERVER.JS] Upload request received:`, {
+      debugUpload(`Upload request received:`, {
         jobId,
         bucket: bucketName,
         folder: folderPath,
@@ -503,15 +496,15 @@ app.post(
       });
 
       if (!files || files.length === 0) {
-        console.error("[SERVER.JS] Upload failed: No files provided");
+        debugUpload("Upload failed: No files provided");
         return res.status(400).json({
           success: false,
           error: "No files provided",
         });
       }
 
-      console.log(
-        "[SERVER.JS - line 583] Files to upload:",
+      debugUpload(
+        "Files to upload:",
         files.map(
           (file, index) =>
             `${index + 1}. ${file.originalname} (${(
@@ -541,11 +534,11 @@ app.post(
 
     } catch (error) {
       const errorTime = Date.now() - startTime;
-      console.error(`[UPLOAD] Upload error occurred after ${errorTime}ms:`, {
+      debugUpload(`Upload error occurred after ${errorTime}ms:`, {
         error: error.message,
         stack: error.stack,
       });
-      console.error("[UPLOAD] Upload request failed");
+      debugUpload("Upload request failed");
 
       res.status(500).json({
         success: false,
@@ -557,6 +550,7 @@ app.post(
 
 // GET /buckets/:bucketName/download - Get/download a specific object (Public access for images)
 app.get("/buckets/:bucketName/download", async (req, res) => {
+  debugEndpoints('get /buckets/:bucketName/download');
   try {
     const { bucketName } = req.params;
     const { object } = req.query;
@@ -568,20 +562,20 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
       });
     }
 
-    console.log("[UPLOAD SERVICE] About to stream object:", {
+    debugUpload("About to stream object:", {
       bucketName,
       object,
     });
 
     // Stream the object directly to the response
     const objectStream = await minioClient.getObject(bucketName, object);
-    console.log("[UPLOAD SERVICE] Object stream created successfully");
+    debugUpload("Object stream created successfully");
 
     // Retrieve object metadata
     const objectStat = await minioClient.statObject(bucketName, object);
 
-    console.log(
-      "[UPLOAD SERVICE] Object metadata retrieved successfully:",
+    debugUpload(
+      "Object metadata retrieved successfully:",
       objectStat
     );
 
@@ -622,26 +616,26 @@ async function startServer() {
       const k8sNamespace = process.env.K8S_NAMESPACE || "webapps";
       const publicUrl =
         process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
-      console.log(`\nStarting PhotoVault ${new Date()}...`);
-      console.log(`PhotoVault API server running on port ${PORT}`);
-      console.log(
+      debugServer(`Starting PhotoVault ${new Date()}...`);
+      debugServer(`PhotoVault API server running on port ${PORT}`);
+      debugServer(
         `Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`
       );
-      console.log(`Health check (public): ${publicUrl}/health`);
-      console.log(
+      debugServer(`Health check (public): ${publicUrl}/health`);
+      debugServer(
         `Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`
       );
-      console.log(
+      debugServer(
         `MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
       );
-      console.log(`Auth Mode: ${authMode}`);
+      debugServer(`Auth Mode: ${authMode}`);
 
       if (authMode === "demo") {
-        console.log("Demo users available: admin/admin123, user/user123");
+        debugServer("Demo users available: admin/admin123, user/user123");
       }
     });
   } catch (error) {
-    console.error("Failed to start server:", error.message);
+    debugServer("Failed to start server:", error.message);
     process.exit(1);
   }
 }
@@ -658,7 +652,7 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
       const file = files[i];
 
       try {
-        console.log(`[SERVER.JS] Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
+        debugUpload(`Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -668,11 +662,10 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
         );
         uploadResults.push(result);
 
-        console.log(`[SERVER.JS] Successfully processed: ${file.originalname}`);
+        debugUpload(`Successfully processed: ${file.originalname}`);
       } catch (error) {
-        console.error(
-          `[SERVER.JS]] Error processing file ${file.originalname}:`,
-          error.message
+        debugUpload(
+          `Error processing file ${file.originalname}: ${error.message}`
         );
         errors.push({
           filename: file.originalname,
@@ -682,8 +675,8 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
     }
 
     const processingTime = Date.now() - startTime;
-    console.log(
-      `[SERVER.JS] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
+    debugUpload(
+      `Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
     );
 
     // Send single completion message
@@ -723,13 +716,13 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
 
     // Clean up SSE connections after 30 seconds
     setTimeout(() => {
-      console.log(`[UPLOAD_BG] Cleaning up SSE connections for job ${jobId}`);
+      debugUpload(`Cleaning up SSE connections for job ${jobId}`);
       sseConnections.delete(jobId);
     }, 300000);
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    console.error(
-      `[UPLOAD_BG] Background processing error after ${errorTime}ms:`,
+    debugUpload(
+      `Background processing error after ${errorTime}ms:`,
       {
         error: error.message,
         stack: error.stack,
@@ -749,9 +742,10 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
     }, 30000);
   }
 }
+
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  console.log("Shutting down server...");
+  debugServer("Shutting down server...");
   if (process.env.AUTH_MODE === "database") {
     await database.close();
   }
@@ -766,11 +760,11 @@ async function initializeDatabase() {
     try {
       await database.initialize();
     } catch (error) {
-      console.error("Database initialization failed:", error.message);
+      debugAuth("Database initialization failed:", error.message);
       process.env.AUTH_MODE = "demo";
     }
   } else {
-    //console.log('Running in demo authentication mode')
+    debugAuth('Running in demo authentication mode');
   }
 }
 
@@ -790,13 +784,13 @@ async function countAlbums(bucketName) {
 
     objectsStream.on("end", () => {
       const albums = [...folderSet];
-      console.log(`Number of top-level folders: ${albums.length}`);
-      console.log(albums);
+      debugMinio(`Number of top-level folders: ${albums.length}`);
+      debugMinio(albums);
       resolve(albums);
     });
 
     objectsStream.on("error", (err) => {
-      console.error("Error listing objects:", err);
+      debugMinio("Error listing objects:", err);
       reject(err);
     });
   });
