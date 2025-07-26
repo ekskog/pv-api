@@ -5,8 +5,6 @@ const debugConverter = debug("photovault:converter");
 const debugHealth = debug("photovault:converter:health");
 const debugConversion = debug("photovault:converter:conversion");
 
-// Using built-in fetch() available in Node.js 18+
-
 class AvifConverterService {
   constructor() {
     // Consolidated microservice configuration
@@ -26,7 +24,7 @@ class AvifConverterService {
       
       const response = await fetch(`${this.converterUrl}/health`, {
         method: 'GET',
-        timeout: 5000 // 5 second timeout for health checks
+        timeout: 60000 // 1 minute timeout for health checks
       });
       
       if (!response.ok) {
@@ -58,86 +56,67 @@ class AvifConverterService {
  * @returns {Object} Conversion result with AVIF files
  */
 async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
-  try {
-    debugConversion(`Starting conversion for: ${originalName} (${mimeType})`);
-    debugConversion(`File buffer size: ${fileBuffer.length} bytes`);
-    
-    // Use single endpoint for all supported formats
-    const endpoint = '/convert';
-    // Create form data for multipart upload using native FormData
-    const formData = new FormData();
-    // Create a Blob from the buffer with proper type
-    const blob = new Blob([fileBuffer], { type: mimeType });
-    
-    // Append the blob as a file with proper filename
-    const fieldName = 'image'; // Updated to match the converter's expected field
-    formData.append(fieldName, blob, originalName);
+    try {
+      debugConversion(`Starting conversion for: ${originalName} (${mimeType})`);
+      debugConversion(`File buffer size: ${fileBuffer.length} bytes`);
 
-    // Add MIME type to the form data to ensure it is passed to the microservice
-    formData.append('mimeType', mimeType);
+      const endpoint = '/convert';
+      const formData = new FormData();
+      const blob = new Blob([fileBuffer], { type: mimeType });
+      formData.append('image', blob, originalName);
+      formData.append('mimeType', mimeType);
 
-    debugConversion(`Sending conversion request to: ${this.converterUrl}${endpoint}`);
-    debugConversion(`Request timeout: ${this.converterTimeout}ms`);
-    
-    const response = await fetch(`${this.converterUrl}${endpoint}`, {
-      method: 'POST',
-      body: formData,
-      timeout: this.converterTimeout
-    });
+      debugConversion(`Sending conversion request to: ${this.converterUrl}${endpoint}`);
+      debugConversion(`Request timeout: ${this.converterTimeout}ms`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      debugConversion(`Conversion request failed: ${response.status} ${response.statusText} - ${errorText}`);
-      throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
+      const response = await fetch(`${this.converterUrl}${endpoint}`, {
+        method: 'POST',
+        body: formData,
+        timeout: this.converterTimeout
+      });
 
-    const responseData = await response.json();
-    debugConversion(`Received response from converter:`, {
-      success: responseData.success,
-      hasData: !!responseData.data,
-      hasFullSize: !!(responseData.data && responseData.data.fullSize)
-    });
-
-    if (!responseData.success) {
-      debugConversion(`Conversion failed: ${responseData.error || 'Unknown error'}`);
-      throw new Error(`Conversion failed: ${responseData.error || 'Unknown error'}`);
-    }
-
-    // Fix: Access fullSize from the correct path (responseData.data.fullSize)
-    if (!responseData.data || !responseData.data.fullSize) {
-      debugConversion(`Conversion failed: Missing fullSize in response data`);
-      throw new Error(`Conversion failed: Missing fullSize in response data`);
-    }
-
-    const baseName = originalName.replace(/\.(jpg|jpeg|heic)$/i, '');
-    debugConversion(`Base name for output: ${baseName}`);
-    
-    const files = [];
-    files.push({
-      filename: `${baseName}.avif`,
-      content: responseData.data.fullSize.content, // Access from correct path
-      size: responseData.data.fullSize.size,
-      mimetype: 'image/avif',
-      variant: 'full'
-    });
-
-    debugConversion(`Processed: full-size (${responseData.data.fullSize.size}B) -> ${baseName}.avif`);
-
-    return {
-      success: true,
-      data: {
-        files: files
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
-    };
 
-  } catch (error) {
-    debugConversion(`Conversion failed for ${originalName}: ${error.message}`);
-    return {
-      success: false,
-      error: error.message
-    };
+      const responseData = await response.json();
+
+      if (!responseData.success) {
+        throw new Error(`Conversion failed: ${responseData.error || 'Unknown error'}`);
+      }
+
+      if (!responseData.data || !responseData.data.fullSize) {
+        throw new Error(`Conversion failed: Missing fullSize in response data`);
+      }
+
+      const baseName = originalName.replace(/\.(jpg|jpeg|heic)$/i, '');
+      const files = [];
+      files.push({
+        filename: `${baseName}.avif`,
+        content: responseData.data.fullSize.content,
+        size: responseData.data.fullSize.size,
+        mimetype: 'image/avif',
+        variant: 'full'
+      });
+
+      debugConversion(`Processed: full-size (${responseData.data.fullSize.size}B) -> ${baseName}.avif`);
+
+      return {
+        success: true,
+        data: {
+          files: files
+        }
+      };
+
+    } catch (error) {
+      debugConversion(`Conversion failed for ${originalName}: ${error.message}`);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
-}
 
   /**
    * Check health of the converter service
