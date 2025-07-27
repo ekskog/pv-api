@@ -56,7 +56,6 @@ class UploadService {
         debugUpload(`Upload result for ${file.originalname}:`, uploadResult);
 
         // Update JSON metadata with already extracted data (non-blocking)
-        debugMetadata(`Starting async JSON metadata update for ${file.originalname}`);
         if (uploadResult && extractedMetadata) {
           this.updateJsonMetadataAsync(
             bucketName,
@@ -377,15 +376,9 @@ class UploadService {
     extractedMetadata,
     originalFilename
   ) {
-    debugMetadata(
-      `Starting JSON metadata update for ${originalFilename}`
-    );
+    
     
     try {
-      debugMetadata(
-        `Updating JSON metadata for ${uploadResult.objectName} using pre-extracted EXIF data`
-      );
-
       // Use the metadata service to update the JSON file with extracted data
       await this.metadataService.updateFolderMetadata(
         bucketName,
