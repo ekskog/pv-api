@@ -92,4 +92,4 @@ jobs:
           # Apply the updated deployment YAML to ensure all changes (including ports) are applied
           kubectl apply -f k8s/deployment.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
           kubectl apply -f k8s/configmap.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
-          kubectl apply -f k8s/secret.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
+          kubectl apply -f k8s/secrets.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
