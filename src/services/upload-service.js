@@ -48,7 +48,7 @@ class UploadService {
         
         // Extract metadata first
         debugMetadata(`Extracting EXIF metadata from ${file.originalname}`);
-        extractedMetadata = await this.metadataService.extractExifFromBuffer(file.buffer, file.originalname);
+        extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
         debugMetadata(`EXIF extraction completed for ${file.originalname}:`, extractedMetadata);
         
         // Process image file
