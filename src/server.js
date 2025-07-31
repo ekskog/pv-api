@@ -21,8 +21,6 @@ const debugAuth = debug("photovault:auth");
 const debugAlbum = debug("photovault:album");
 const debugEndpoints = debug("photovault:endpoints");
 
-console.log('DEBUG:', process.env.DEBUG);
-
 // Store active SSE connections by job ID
 const sseConnections = new Map();
 
@@ -43,7 +41,7 @@ const sendSSEEvent = (jobId, eventType, data) => {
 
   try {
     connection.write(message);
-    debugSSE(`Event sent successfully to job ${jobId}`);
+    debugSSE(`LINE 46 - Event ${message} sent successfully to job ${jobId}`);
   } catch (error) {
     debugSSE(`Error sending to job ${jobId}: ${error.message}`);
     // Remove failed connection
@@ -97,16 +95,16 @@ const uploadService = new UploadService(minioClient);
 
 // Health check route
 app.get("/health", async (req, res) => {
-  debugEndpoints('get /health');
+  debugEndpoints("get /health");
   debugHealth(
-    `Health check request received from ${req.ip} at ${new Date().toISOString()}`
+    `Health check request received from ${
+      req.ip
+    } at ${new Date().toISOString()}`
   );
   try {
     // Test MinIO connection by listing albums
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
-    debugHealth(
-      `MinIO connection successful, found ${albums.length} albums`
-    );
+    debugHealth(`MinIO connection successful, found ${albums.length} albums`);
 
     // Check single converter service
     let converterHealthy = false;
@@ -174,7 +172,7 @@ app.get("/health", async (req, res) => {
 
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
-    debugEndpoints('get /processing-status/:jobId');
+  debugEndpoints("get /processing-status/:jobId");
 
   const jobId = req.params.jobId;
   debugSSE(`Client connecting for job ${jobId}`);
@@ -202,7 +200,7 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   res.write(`data: ${confirmationData}\n\n`);
-  debugSSE(`Sent connection confirmation for job ${jobId}`);
+  debugSSE(`Sent ${confirmationData} for job ${jobId}`);
 
   // Handle client disconnect
   req.on("close", () => {
@@ -218,7 +216,7 @@ app.get("/processing-status/:jobId", (req, res) => {
 
 // GET /albums - List all albums (public access for album browsing)
 app.get("/albums", async (req, res) => {
-  debugEndpoints('get /albums');
+  debugEndpoints("get /albums");
   try {
     const folderSet = new Set();
 
@@ -258,14 +256,15 @@ app.get("/albums", async (req, res) => {
   }
 });
 
+// List objects in a bucket (Admin only)
 app.get("/buckets/:bucketName/objects", async (req, res) => {
-  debugEndpoints('get /buckets/:bucketName/objects');
+  debugEndpoints("get /buckets/:bucketName/objects");
   debugMinio(
-    `Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}, recursive: ${req.query.recursive}`
+    `Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}}`
   );
   try {
     const { bucketName } = req.params;
-    const { prefix = "", recursive = "false" } = req.query;
+    const { prefix = "" } = req.query;
 
     // Check if bucket exists
     const bucketExists = await minioClient.bucketExists(bucketName);
@@ -278,17 +277,20 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
 
     const objects = [];
     const folders = [];
-    const isRecursive = recursive === "true";
 
-    // For recursive: use listObjects with recursive=true, no delimiter
-    // For non-recursive: use listObjectsV2 with delimiter to show folders
     let stream;
 
-    if (isRecursive) {
-      // Recursive listing - get all objects
-      stream = minioClient.listObjects(bucketName, prefix, true);
+    // Non-recursive listing - show folder structure
+    stream = minioClient.listObjectsV2(bucketName, prefix, false, "/");
 
-      for await (const obj of stream) {
+    for await (const obj of stream) {
+      if (obj.prefix) {
+        // This is a folder/prefix
+        folders.push({
+          name: obj.prefix,
+          type: "folder",
+        });
+      } else {
         // Skip metadata JSON files from the listing
         if (obj.name.endsWith(".json") && obj.name.includes("/")) {
           const pathParts = obj.name.split("/");
@@ -299,6 +301,7 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
           }
         }
 
+        // This is a file/object
         objects.push({
           name: obj.name,
           size: obj.size,
@@ -307,38 +310,6 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
           type: "file",
         });
       }
-    } else {
-      // Non-recursive listing - show folder structure
-      stream = minioClient.listObjectsV2(bucketName, prefix, false, "/");
-
-      for await (const obj of stream) {
-        if (obj.prefix) {
-          // This is a folder/prefix
-          folders.push({
-            name: obj.prefix,
-            type: "folder",
-          });
-        } else {
-          // Skip metadata JSON files from the listing
-          if (obj.name.endsWith(".json") && obj.name.includes("/")) {
-            const pathParts = obj.name.split("/");
-            const fileName = pathParts[pathParts.length - 1];
-            const folderName = pathParts[pathParts.length - 2];
-            if (fileName === `${folderName}.json`) {
-              continue;
-            }
-          }
-
-          // This is a file/object
-          objects.push({
-            name: obj.name,
-            size: obj.size,
-            lastModified: obj.lastModified,
-            etag: obj.etag,
-            type: "file",
-          });
-        }
-      }
     }
 
     const responseData = {
@@ -346,7 +317,6 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
       data: {
         bucket: bucketName,
         prefix: prefix || "/",
-        recursive: isRecursive,
         folders: folders,
         objects: objects,
         totalFolders: folders.length,
@@ -356,7 +326,7 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
 
     res.json(responseData);
   } catch (error) {
-    debugMinio('Error in GET /buckets/:bucketName/objects:', error.message);
+    debugMinio("Error in GET /buckets/:bucketName/objects:", error.message);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -370,7 +340,7 @@ app.post(
   authenticateToken,
   requireRole("admin"),
   async (req, res) => {
-  debugEndpoints('post /buckets/:bucketName/folders');
+    debugEndpoints("post /buckets/:bucketName/folders");
     try {
       const { bucketName } = req.params;
       const { folderPath } = req.body;
@@ -435,11 +405,11 @@ app.post(
           name: cleanPath,
           created: new Date().toISOString(),
           description: "",
-          totalPhotos: 0,
+          totalObjects: 0,
           totalSize: 0,
           lastModified: new Date().toISOString(),
         },
-        photos: [],
+        media: [],
       };
 
       const metadataContent = Buffer.from(
@@ -481,7 +451,7 @@ app.post(
   authenticateToken,
   upload.array("files"),
   async (req, res) => {
-    debugEndpoints('post /buckets/:bucketName/upload');
+    debugEndpoints("post /buckets/:bucketName/upload");
     const startTime = Date.now();
     const jobId = uuidv4(); // Generate unique job ID for this upload
 
@@ -535,7 +505,6 @@ app.post(
       res.status(200).json(response);
 
       processFilesInBackground(files, bucketName, folderPath, startTime, jobId);
-
     } catch (error) {
       const errorTime = Date.now() - startTime;
       debugUpload(`Upload error occurred after ${errorTime}ms:`, {
@@ -554,7 +523,7 @@ app.post(
 
 // GET /buckets/:bucketName/download - Get/download a specific object (Public access for images)
 app.get("/buckets/:bucketName/download", async (req, res) => {
-  debugEndpoints('get /buckets/:bucketName/download');
+  debugEndpoints("get /buckets/:bucketName/download");
   try {
     const { bucketName } = req.params;
     const { object } = req.query;
@@ -578,10 +547,7 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
     // Retrieve object metadata
     const objectStat = await minioClient.statObject(bucketName, object);
 
-    debugUpload(
-      "Object metadata retrieved successfully:",
-      objectStat
-    );
+    debugUpload("Object metadata retrieved successfully:", objectStat);
 
     // Set appropriate headers
     res.setHeader(
@@ -647,7 +613,13 @@ async function startServer() {
 // Background processing function for asynchronous uploads
 // Add detailed logging for background processing
 // Background processing function for asynchronous uploads with SSE updates
-async function processFilesInBackground(files, bucketName, folderPath, startTime, jobId) {
+async function processFilesInBackground(
+  files,
+  bucketName,
+  folderPath,
+  startTime,
+  jobId
+) {
   try {
     const uploadResults = [];
     const errors = [];
@@ -656,7 +628,9 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
       const file = files[i];
 
       try {
-        debugUpload(`Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
+        debugUpload(
+          `Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`
+        );
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -725,13 +699,10 @@ async function processFilesInBackground(files, bucketName, folderPath, startTime
     }, 300000);
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    debugUpload(
-      `Background processing error after ${errorTime}ms:`,
-      {
-        error: error.message,
-        stack: error.stack,
-      }
-    );
+    debugUpload(`Background processing error after ${errorTime}ms:`, {
+      error: error.message,
+      stack: error.stack,
+    });
 
     // Send error completion message
     sendSSEEvent(jobId, "complete", {
@@ -768,7 +739,7 @@ async function initializeDatabase() {
       process.env.AUTH_MODE = "demo";
     }
   } else {
-    debugAuth('Running in demo authentication mode');
+    debugAuth("Running in demo authentication mode");
   }
 }
 

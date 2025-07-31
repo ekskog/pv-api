@@ -63,7 +63,7 @@ class UploadService {
             extractedMetadata,
             file.originalname
           ).catch((error) => {
-            debugMetadata(`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
+            throw new Error (`LINE 66 - Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
           });
         }
 
@@ -391,8 +391,8 @@ class UploadService {
         `Successfully updated JSON metadata for ${uploadResult.objectName}`
       );
     } catch (error) {
-      debugMetadata(
-        `Failed to update JSON metadata for ${uploadResult.objectName}: ${error.message}`
+      throw new Error(
+        ` LINE 395 - Failed to update JSON metadata for ${uploadResult.objectName}: ${error.message}`
       );
     }
   }

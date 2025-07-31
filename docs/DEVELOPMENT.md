@@ -9,6 +9,15 @@
 
 2. **Start local MinIO (required for development):**
    ```bash
+docker run -d \
+  --name minio \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e MINIO_ROOT_USER=lucarv \
+  -e MINIO_ROOT_PASSWORD='lucaPWD$MinI0' \
+  quay.io/minio/minio server /data --console-address ":9001"
+
+
    npm run dev:setup
    ```
    This will:

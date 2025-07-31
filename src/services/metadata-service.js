@@ -1,4 +1,4 @@
-const ExifReader = require('exifreader');
+const ExifReader = require("exifreader");
 const debug = require("debug");
 
 const debugMetadata = debug("photovault:metadata");
@@ -20,12 +20,12 @@ class MetadataService {
   async extractEssentialMetadata(imageBuffer, filename) {
     try {
       const tags = ExifReader.load(imageBuffer, { expanded: false });
-      
+
       const metadata = {
         dateTaken: this.extractDate(tags),
         gpsCoordinates: null,
         gpsAddress: null,
-        hasData: false
+        hasData: false,
       };
 
       // Extract GPS and resolve address if coordinates exist
@@ -41,10 +41,11 @@ class MetadataService {
       }
 
       return metadata;
-
     } catch (error) {
-      debugMetadata(`Failed to extract metadata from ${filename}: ${error.message}`);
-      return { hasData: false, error: error.message };
+      debugMetadata(
+        `LINE 46: Failed to extract metadata from ${filename}: ${error.message}`
+      );
+      return null;
     }
   }
 
@@ -52,14 +53,16 @@ class MetadataService {
    * Extract date from EXIF - try the most common tags only
    */
   extractDate(tags) {
-    const dateFields = ['DateTimeOriginal', 'DateTime', 'DateTimeDigitized'];
-    
+    const dateFields = ["DateTimeOriginal", "DateTime", "DateTimeDigitized"];
+
     for (const field of dateFields) {
       if (tags[field]?.description) {
         try {
           // Convert EXIF date format "2024:07:21 14:02:24" to ISO
-          const isoDate = tags[field].description
-            .replace(/(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
+          const isoDate = tags[field].description.replace(
+            /(\d{4}):(\d{2}):(\d{2})/,
+            "$1-$2-$3"
+          );
           return new Date(isoDate).toISOString();
         } catch (error) {
           continue; // Try next field
@@ -78,16 +81,22 @@ class MetadataService {
     }
 
     try {
-      const lat = this.parseCoordinate(tags.GPSLatitude, tags.GPSLatitudeRef?.description);
-      const lng = this.parseCoordinate(tags.GPSLongitude, tags.GPSLongitudeRef?.description);
-      
+      const lat = this.parseCoordinate(
+        tags.GPSLatitude,
+        tags.GPSLatitudeRef?.description
+      );
+      const lng = this.parseCoordinate(
+        tags.GPSLongitude,
+        tags.GPSLongitudeRef?.description
+      );
+
       if (lat !== null && lng !== null) {
         return { lat, lng };
       }
     } catch (error) {
       debugGps(`GPS parsing error: ${error.message}`);
     }
-    
+
     return null;
   }
 
@@ -98,14 +107,14 @@ class MetadataService {
     if (!coord.description) return null;
 
     let decimal;
-    
-    if (typeof coord.description === 'number') {
+
+    if (typeof coord.description === "number") {
       decimal = coord.description;
-    } else if (coord.description.includes(',')) {
+    } else if (coord.description.includes(",")) {
       // Parse "degrees,minutes,seconds" format
-      const parts = coord.description.split(',').map(p => parseFloat(p));
+      const parts = coord.description.split(",").map((p) => parseFloat(p));
       if (parts.length === 3) {
-        decimal = parts[0] + parts[1]/60 + parts[2]/3600;
+        decimal = parts[0] + parts[1] / 60 + parts[2] / 3600;
       } else {
         return null;
       }
@@ -116,7 +125,7 @@ class MetadataService {
     if (isNaN(decimal)) return null;
 
     // Apply hemisphere (S/W = negative)
-    if (ref && (ref === 'S' || ref === 'W')) {
+    if (ref && (ref === "S" || ref === "W")) {
       decimal = -decimal;
     }
 
@@ -130,7 +139,7 @@ class MetadataService {
     if (!this.mapboxToken) return null;
 
     const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-    
+
     if (this.gpsCache.has(cacheKey)) {
       return this.gpsCache.get(cacheKey);
     }
@@ -158,49 +167,81 @@ class MetadataService {
    * Update folder metadata JSON with essential data only
    */
   async updateFolderMetadata(bucketName, objectName, metadata) {
-    const folderName = objectName.split('/')[0];
+    const folderName = objectName.split("/")[0];
     if (!folderName || folderName === objectName) return; // Skip root uploads
-
     const jsonFileName = `${folderName}/${folderName}.json`;
+    debugMetadata(`Line 172 - updateFolderMetadata ${objectName}`);
+    debugMetadata(
+      `Line 173 - Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`
+    );
 
     try {
-      // Get existing metadata or create new
+      debugMetadata("Starting metadata update process...");
+
       let folderData;
+      const chunks = [];
+
       try {
-        const stream = await this.minioClient.getObject(bucketName, jsonFileName);
-        const chunks = [];
+        debugMetadata(
+          `Attempting to retrieve existing metadata from ${jsonFileName}...`
+        );
+        const stream = await this.minioClient.getObject(
+          bucketName,
+          jsonFileName
+        );
         for await (const chunk of stream) chunks.push(chunk);
-        folderData = JSON.parse(Buffer.concat(chunks).toString());
-      } catch {
+        const rawData = Buffer.concat(chunks).toString();
+        debugMetadata("Raw metadata retrieved:", rawData);
+        folderData = JSON.parse(rawData);
+        debugMetadata("Parsed existing metadata successfully.");
+        debugMetadata(folderData);
+      } catch (err) {
+        debugMetadata(
+          `Could not retrieve or parse existing metadata. Reason: ${err.message}`
+        );
         folderData = {
           folderName,
-          images: [],
-          lastUpdated: new Date().toISOString()
+          media: [],
+          lastUpdated: new Date().toISOString(),
         };
+        debugMetadata("Initialized new metadata object.");
       }
 
-      // Add/update image metadata
       const imageData = {
         sourceImage: objectName,
-        timestamp: metadata.dateTaken,
-        location: metadata.gpsAddress,
-        coordinates: metadata.gpsCoordinates
+        timestamp: metadata.dateTaken ?? "not captured",
+        location: metadata.gpsAddress ?? "not captured",
+        coordinates: metadata.gpsCoordinates ?? "not captured",
       };
+      debugMetadata("Prepared image metadata:", imageData);
 
-      // Remove existing entry for this image if it exists
-      folderData.images = folderData.images.filter(img => img.sourceImage !== objectName);
-      folderData.images.push(imageData);
+      debugMetadata("LINE 217 - Current folder media:", folderData.media);
+
+      folderData.media = folderData.media.filter(
+        (img) => img.sourceImage !== objectName
+      );
+      folderData.media.push(imageData);
       folderData.lastUpdated = new Date().toISOString();
+      debugMetadata("Updated folder metadata with new photo.");
 
-      // Save updated metadata
       const jsonContent = Buffer.from(JSON.stringify(folderData, null, 2));
-      await this.minioClient.putObject(bucketName, jsonFileName, jsonContent);
-      
-      debugMetadata(`Updated metadata for ${folderName}`);
-      return true;
+      debugMetadata("Serialized metadata to JSON.");
 
+      const minioResult = await this.minioClient.putObject(
+        bucketName,
+        jsonFileName,
+        jsonContent
+      );
+      debugMetadata(`Successfully saved metadata. ETag: ${minioResult.etag}`);
+
+      debugMetadata(
+        `LINE 216 - Updated metadata for ${folderName} : ${minioResult.etag}`
+      );
+      return true;
     } catch (error) {
-      debugMetadata(`Failed to update folder metadata: ${error.message}`);
+      debugMetadata(
+        `LINE 220 - Failed to update folder metadata: ${error.message}`
+      );
       return false;
     }
   }
@@ -208,56 +249,57 @@ class MetadataService {
   /**
    * Process existing images in batches
    */
-  async batchProcessImages(bucketName, prefix = '', batchSize = 3) {
+  async batchProcessImages(bucketName, prefix = "", batchSize = 3) {
     const objects = [];
     const stream = this.minioClient.listObjects(bucketName, prefix, true);
-    
+
     // Get only image files
     for await (const obj of stream) {
-      const ext = obj.name.split('.').pop().toLowerCase();
-      if (['jpg', 'jpeg', 'png', 'tiff', 'heic'].includes(ext)) {
+      const ext = obj.name.split(".").pop().toLowerCase();
+      if (["jpg", "jpeg", "png", "tiff", "heic"].includes(ext)) {
         objects.push(obj);
       }
     }
 
-    console.log(`Processing ${objects.length} images...`);
-
     let processed = 0;
     for (let i = 0; i < objects.length; i += batchSize) {
       const batch = objects.slice(i, i + batchSize);
-      
+
       for (const obj of batch) {
         try {
-          console.log(`Processing ${obj.name}...`);
-          
           // Download first 64KB for EXIF
-          const stream = await this.minioClient.getPartialObject(bucketName, obj.name, 0, 65536);
+          const stream = await this.minioClient.getPartialObject(
+            bucketName,
+            obj.name,
+            0,
+            65536
+          );
           const chunks = [];
           for await (const chunk of stream) chunks.push(chunk);
           const buffer = Buffer.concat(chunks);
 
           // Extract metadata
-          const metadata = await this.extractEssentialMetadata(buffer, obj.name);
-          
+          const metadata = await this.extractEssentialMetadata(
+            buffer,
+            obj.name
+          );
+
           if (metadata.hasData) {
             await this.updateFolderMetadata(bucketName, obj.name, metadata);
           }
 
           processed++;
           if (processed % 10 === 0) {
-            console.log(`Progress: ${processed}/${objects.length}`);
+            debugMetadata(`Progress: ${processed}/${objects.length}`);
           }
 
           // Rate limiting
-          await new Promise(resolve => setTimeout(resolve, 200));
-
+          await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
           console.error(`Failed to process ${obj.name}:`, error.message);
         }
       }
     }
-
-    console.log(`Completed processing ${processed} images`);
   }
 }
 
