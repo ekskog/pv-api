@@ -101,7 +101,7 @@ app.get("/health", async (req, res) => {
       req.ip
     } at ${new Date().toISOString()}`
   );
-  try {
+  try { 
     // Test MinIO connection by listing albums
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
     debugHealth(`MinIO connection successful, found ${albums.length} albums`);
@@ -598,6 +598,8 @@ async function startServer() {
       debugServer(
         `> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
       );
+          const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
+      debugServer(`> Albums found: ${albums.length}`);
       debugServer(`Auth Mode: ${authMode}`);
 
       if (authMode === "demo") {
