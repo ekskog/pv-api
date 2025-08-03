@@ -762,4 +762,4 @@ async function countAlbums(bucketName) {
 }
 
 // Start the server
-await startServer();
+startServer();
