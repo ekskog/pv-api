@@ -97,10 +97,7 @@ const uploadService = new UploadService(minioClient);
 app.get("/health", async (req, res) => {
   debugEndpoints("get /health");
   debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
-//return 200, ok for now to fake all is good
-  res.status(200).json({ status: "ok" });
 
-/*
   let minioHealthy = false;
   let converterHealthy = false;
   let albumsCount = 0;
@@ -115,6 +112,9 @@ app.get("/health", async (req, res) => {
     debugHealth(`MinIO failure: ${error.message}`);
   }
 
+  //return 200, ok for now to fake all is good
+  res.status(200).json({ status: "ok" });
+/*
   // Converter check
   try {
     const converterUrl = process.env.AVIF_CONVERTER_URL;
