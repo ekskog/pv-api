@@ -587,16 +587,16 @@ async function startServer() {
       const publicUrl =
         process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
       debugServer(`Starting PhotoVault ${new Date()}...`);
-      debugServer(`PhotoVault API server running on port ${PORT}`);
+      debugServer(`> PhotoVault API server running on port ${PORT}`);
       debugServer(
-        `Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`
+        `> Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`
       );
       debugServer(`Health check (public): ${publicUrl}/health`);
       debugServer(
-        `Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`
+        `> Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`
       );
       debugServer(
-        `MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
+        `> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
       );
       debugServer(`Auth Mode: ${authMode}`);
 
@@ -759,7 +759,7 @@ async function countAlbums(bucketName) {
 
     objectsStream.on("end", () => {
       const albums = [...folderSet];
-      debugMinio(`Number of top-level folders: ${albums.length}`);
+      debugMinio(`Number of ALBUMS: ${albums.length}`);
       debugMinio(albums);
       resolve(albums);
     });

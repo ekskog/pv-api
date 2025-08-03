@@ -68,7 +68,7 @@ jobs:
       
       - name: Set Up KUBECONFIG
         run: |
-          echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig.yaml
           echo "KUBECONFIG=$PWD/kubeconfig.yaml" >> $GITHUB_ENV
           echo "KUBECONFIG set to $PWD/kubeconfig.yaml"
           echo "Kubeconfig file size: $(wc -c < kubeconfig.yaml) bytes"
