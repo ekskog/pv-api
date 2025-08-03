@@ -112,9 +112,6 @@ app.get("/health", async (req, res) => {
     debugHealth(`MinIO failure: ${error.message}`);
   }
 
-  //return 200, ok for now to fake all is good
-  res.status(200).json({ status: "ok" });
-/*
   // Converter check
   try {
     const converterUrl = process.env.AVIF_CONVERTER_URL;
@@ -160,7 +157,7 @@ app.get("/health", async (req, res) => {
       endpoint: process.env.AVIF_CONVERTER_URL,
     },
   });
-  */
+  
 });
 
 
