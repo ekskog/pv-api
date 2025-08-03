@@ -96,79 +96,69 @@ const uploadService = new UploadService(minioClient);
 // Health check route
 app.get("/health", async (req, res) => {
   debugEndpoints("get /health");
-  debugHealth(
-    `Health check request received from ${
-      req.ip
-    } at ${new Date().toISOString()}`
-  );
-  try { 
-    // Test MinIO connection by listing albums
+  debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
+
+  let minioHealthy = false;
+  let converterHealthy = false;
+  let albumsCount = 0;
+
+  // MinIO check
+  try {
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
-    debugHealth(`MinIO connection successful, found ${albums.length} albums`);
-
-    // Check single converter service
-    let converterHealthy = false;
-    try {
-      const converterUrl = process.env.AVIF_CONVERTER_URL;
-
-      debugHealth(`Testing converter connection at ${converterUrl}`);
-
-      const response = await fetch(`${converterUrl}/health`, {
-        timeout: parseInt(process.env.AVIF_CONVERTER_TIMEOUT),
-      });
-
-      debugHealth(`Converter response status: ${response.status}`);
-
-      if (response.ok) {
-        converterHealthy = true;
-        debugHealth(`Converter is healthy`);
-      } else {
-        debugHealth(`Converter responded with status: ${response.status}`);
-      }
-    } catch (error) {
-      debugHealth(`Converter health check failed: ${error.message}`);
-    }
-
-    const isHealthy = converterHealthy && albums.length > -1;
-    const status = isHealthy ? "healthy" : "degraded";
-
-    const healthStatus = {
-      status,
-      timestamp: new Date().toISOString(),
-      minio: {
-        connected: true,
-        albums: albums.length,
-        endpoint: process.env.MINIO_ENDPOINT,
-      },
-      converter: {
-        connected: converterHealthy,
-        endpoint: process.env.AVIF_CONVERTER_URL,
-      },
-    };
-
-    const responseStatus = isHealthy ? 200 : 503;
-    debugHealth(
-      `Sending response with status: ${status}, code: ${responseStatus}`
-    );
-    res.status(responseStatus).json(healthStatus);
+    albumsCount = albums.length;
+    minioHealthy = true;
+    debugHealth(`MinIO healthy, ${albumsCount} albums`);
   } catch (error) {
-    debugHealth(`Error during health check: ${error.message}`);
-
-    res.status(503).json({
-      status: "unhealthy",
-      timestamp: new Date().toISOString(),
-      minio: {
-        connected: false,
-        error: error.message,
-      },
-      converter: {
-        connected: false,
-        endpoint: process.env.AVIF_CONVERTER_URL,
-        error: "Could not verify due to MinIO connection failure",
-      },
-    });
+    debugHealth(`MinIO failure: ${error.message}`);
   }
+
+  // Converter check
+  try {
+    const converterUrl = process.env.AVIF_CONVERTER_URL;
+    const timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT, 10);
+
+    debugHealth(`Checking converter at ${converterUrl}`);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(`${converterUrl}/health`, {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timer);
+
+    if (response.ok) {
+      converterHealthy = true;
+      debugHealth(`Converter is healthy`);
+    } else {
+      debugHealth(`Converter unhealthy: ${response.status}`);
+    }
+  } catch (error) {
+    debugHealth(`Converter failure: ${error.message}`);
+  }
+
+  // Compose response
+  const isHealthy = minioHealthy && converterHealthy;
+  const status = isHealthy ? "healthy" : "degraded";
+  const code = isHealthy ? 200 : 503;
+
+  debugHealth(`Responding with ${status} (${code})`);
+  res.status(code).json({
+    status,
+    timestamp: new Date().toISOString(),
+    minio: {
+      connected: minioHealthy,
+      albums: albumsCount,
+      endpoint: process.env.MINIO_ENDPOINT,
+    },
+    converter: {
+      connected: converterHealthy,
+      endpoint: process.env.AVIF_CONVERTER_URL,
+    },
+  });
 });
+
 
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
@@ -598,8 +588,6 @@ async function startServer() {
       debugServer(
         `> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
       );
-          const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
-      debugServer(`> Albums found: ${albums.length}`);
       debugServer(`Auth Mode: ${authMode}`);
 
       if (authMode === "demo") {
@@ -774,4 +762,4 @@ async function countAlbums(bucketName) {
 }
 
 // Start the server
-startServer();
+await startServer();
