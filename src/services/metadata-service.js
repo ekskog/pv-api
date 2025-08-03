@@ -176,7 +176,7 @@ class MetadataService {
     );
 
     try {
-      debugMetadata("Starting metadata update process...");
+      debugMetadata("Starting folder metadata update process...");
 
       let folderData;
       const chunks = [];
@@ -191,10 +191,9 @@ class MetadataService {
         );
         for await (const chunk of stream) chunks.push(chunk);
         const rawData = Buffer.concat(chunks).toString();
-        debugMetadata("Raw metadata retrieved:", rawData);
         folderData = JSON.parse(rawData);
         debugMetadata("Parsed existing metadata successfully.");
-        debugMetadata(folderData);
+
       } catch (err) {
         debugMetadata(
           `Could not retrieve or parse existing metadata. Reason: ${err.message}`
@@ -204,7 +203,6 @@ class MetadataService {
           media: [],
           lastUpdated: new Date().toISOString(),
         };
-        debugMetadata("Initialized new metadata object.");
       }
 
       const imageData = {
@@ -213,19 +211,14 @@ class MetadataService {
         location: metadata.gpsAddress ?? "not captured",
         coordinates: metadata.gpsCoordinates ?? "not captured",
       };
-      debugMetadata("Prepared image metadata:", imageData);
-
-      debugMetadata("LINE 217 - Current folder media:", folderData.media);
 
       folderData.media = folderData.media.filter(
         (img) => img.sourceImage !== objectName
       );
       folderData.media.push(imageData);
       folderData.lastUpdated = new Date().toISOString();
-      debugMetadata("Updated folder metadata with new photo.");
 
       const jsonContent = Buffer.from(JSON.stringify(folderData, null, 2));
-      debugMetadata("Serialized metadata to JSON.");
 
       const minioResult = await this.minioClient.putObject(
         bucketName,
@@ -234,9 +227,7 @@ class MetadataService {
       );
       debugMetadata(`Successfully saved metadata. ETag: ${minioResult.etag}`);
 
-      debugMetadata(
-        `LINE 216 - Updated metadata for ${folderName} : ${minioResult.etag}`
-      );
+
       return true;
     } catch (error) {
       debugMetadata(
@@ -248,7 +239,7 @@ class MetadataService {
 
   /**
    * Process existing images in batches
-   */
+
   async batchProcessImages(bucketName, prefix = "", batchSize = 3) {
     const objects = [];
     const stream = this.minioClient.listObjects(bucketName, prefix, true);
@@ -301,6 +292,7 @@ class MetadataService {
       }
     }
   }
+       */
 }
 
 module.exports = MetadataService;
