@@ -5,10 +5,9 @@ metadata:
   namespace: webapps
   labels:
     app: photovault-api
-  # Updated to disable all health probes for crash debugging - deploy now
 spec:
   replicas: 1
-  revisionHistoryLimit: 1  # Keep only 1 old replica set
+  revisionHistoryLimit: 1
   selector:
     matchLabels:
       app: photovault-api
@@ -17,6 +16,10 @@ spec:
       labels:
         app: photovault-api
     spec:
+      hostAliases:
+      - ip: "192.168.1.8"
+        hostnames:
+        - "mjolnir"
       containers:
       - name: photovault-api
         image: ghcr.io/ekskog/photovault-api:latest
@@ -36,31 +39,28 @@ spec:
           httpGet:
             path: /health
             port: 3001
-          initialDelaySeconds: 15  # First check after 15 seconds
-          periodSeconds: 1800  # Every 30 minutes thereafter
+          initialDelaySeconds: 15
+          periodSeconds: 1800
           timeoutSeconds: 30
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 3001
-          initialDelaySeconds: 15  # First check after 15 seconds
-          periodSeconds: 1800  # Every 30 minutes thereafter
+          initialDelaySeconds: 15
+          periodSeconds: 1800
           timeoutSeconds: 30
           failureThreshold: 3
-        # All probes completely disabled to prevent restart on crash
-        # even though copilot can't get this to work at all
-        # Updated to trigger manifest redeployment
         resources:
           requests:
             memory: "128Mi"
             cpu: "100m"
           limits:
-            memory: "512Mi"  # Increased for debugging
-            cpu: "1000m"     # Increased for debugging
+            memory: "512Mi"
+            cpu: "1000m"
       volumes:
       - name: log-storage
-        emptyDir: {}  # Ephemeral storage for logs in Kubernetes
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

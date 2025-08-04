@@ -69,7 +69,7 @@ const corsOptions = {
 
 // MinIO Client Configuration
 const minioClient = new Client({
-  endPoint: process.env.MINIO_ENDPOINT,
+  endPoint: process.env.MINIO_ENDPOINT, // now using mino outside the cluster
   port: parseInt(process.env.MINIO_PORT),
   useSSL: process.env.MINIO_USE_SSL === "true",
   accessKey: process.env.MINIO_ACCESS_KEY,
