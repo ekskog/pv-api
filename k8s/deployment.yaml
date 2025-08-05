@@ -20,6 +20,9 @@ spec:
       - ip: "192.168.1.8"
         hostnames:
         - "mjolnir"
+      - ip: "192.168.1.10"
+        hostnames:
+        - "ubumac"  
       containers:
       - name: photovault-api
         image: ghcr.io/ekskog/photovault-api:latest
