@@ -24,8 +24,6 @@ class UploadService {
     this.minioClient = minioClient;
     this.avifConverter = new AvifConverterService();
     this.metadataService = new MetadataService(minioClient);
-    
-    debugUpload("UploadService initialized with AVIF converter and metadata service");
   }
 
   /**
@@ -40,20 +38,14 @@ class UploadService {
     let extractedMetadata = null;
     let uploadResult = null;
 
-    debugUpload(`Starting file processing: ${file.originalname} (${mimetype}, ${(file.size / 1024 / 1024).toFixed(2)}MB)`);
-
     try {
       if (mimetype === "image/heic" || mimetype === "image/jpeg") {
-        debugUpload(`Processing ${mimetype} file: ${file.originalname}`);
-        
+       
         // Extract metadata first
-        debugMetadata(`Extracting EXIF metadata from ${file.originalname}`);
         extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
-        debugMetadata(`EXIF extraction completed for ${file.originalname}:`, extractedMetadata);
         
         // Process image file
-        uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-        debugUpload(`Upload result for ${file.originalname}:`, uploadResult);
+        await this.processImageFile(file, bucketName, folderPath, mimetype);
 
         // Update JSON metadata with already extracted data (non-blocking)
         if (uploadResult && extractedMetadata) {
@@ -63,14 +55,13 @@ class UploadService {
             extractedMetadata,
             file.originalname
           ).catch((error) => {
-            throw new Error (`LINE 66 - Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
+            throw new Error (`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
           });
         }
 
         return uploadResult;
       }
     } catch (error) {
-      debugUpload(`Error processing file ${file.originalname}: ${error.message}`);
       // NO FALLBACK - If AVIF conversion fails, fail the entire upload
       debugUpload(`AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
       throw error;
@@ -102,21 +93,14 @@ class UploadService {
    */
   async processImageFile(file, bucketName, folderPath, mimetype) {
     let uploadResult = null;
-    const uploadTimer = `${mimetype}-upload-${file.originalname}`;
-    
-    debugImage(`Starting image processing: ${file.originalname} (${mimetype})`);
-    console.time(uploadTimer);
-    
+    const uploadTimer = `${mimetype}-upload-${file.originalname}`;    
     try {
       // Convert using microservice
-      debugImage(`Starting AVIF conversion for ${file.originalname}`);
       const conversionResult = await this.avifConverter.convertImage(
         file.buffer,
         file.originalname,
         file.mimetype
       );
-
-      debugImage(`Microservice conversion completed for ${file.originalname}, received ${conversionResult.data.files ? conversionResult.data.files.length : 0} files`);
 
       // Process the actual file contents returned from microservice
       debugImage(`Processing file contents from microservice for ${file.originalname}`);
@@ -124,15 +108,11 @@ class UploadService {
         conversionResult.data.files
       );
 
-      debugImage(`Processed ${Object.keys(variants).length} variants for ${file.originalname}:`, Object.keys(variants));
-
       // Upload all variants to MinIO
       for (const [variantName, variantData] of Object.entries(variants)) {
         const variantObjectName = folderPath
           ? `${folderPath.replace(/\/$/, "")}/${variantData.filename}`
           : variantData.filename;
-
-        debugImage(`Uploading variant ${variantName} to MinIO: ${variantObjectName} (${(variantData.size / 1024).toFixed(2)}KB)`);
 
         const uploadInfo = await this.minioClient.putObject(
           bucketName,
@@ -157,15 +137,11 @@ class UploadService {
           etag: uploadInfo.etag,
           versionId: uploadInfo.versionId,
         };
-
-        debugImage(`Successfully uploaded variant ${variantName}: ${variantObjectName} (ETag: ${uploadInfo.etag})`);
       }
 
-      console.timeEnd(uploadTimer);
       debugImage(`Image processing completed for ${file.originalname}`);
       return uploadResult;
     } catch (error) {
-      console.timeEnd(uploadTimer);
       debugImage(`${mimetype} processing failed for ${file.originalname}: ${error.message}`);
       throw error;
     }
@@ -182,14 +158,6 @@ class UploadService {
     const videoTimer = `Video-upload-${file.originalname}`;
     console.time(videoTimer);
     
-    debugVideo(
-      `Processing video file: ${file.originalname} (${(
-        file.size /
-        1024 /
-        1024
-      ).toFixed(2)}MB, ${file.mimetype})`
-    );
-
     // Check file size limit for videos (larger than images)
     const maxSizeMB = 2000; // 2GB limit for videos
     const fileSizeMB = file.size / 1024 / 1024;
@@ -228,9 +196,6 @@ class UploadService {
       );
 
       console.timeEnd(videoTimer);
-      debugVideo(
-        `Successfully uploaded video: ${objectName} (ETag: ${uploadInfo.etag})`
-      );
 
       return [
         {
@@ -259,8 +224,6 @@ class UploadService {
    */
   _processFileContentsFromMicroservice(microserviceFiles) {
     const variants = {};
-
-    debugImage(`Processing ${microserviceFiles.length} files from microservice`);
 
     for (const fileData of microserviceFiles) {
       try {
@@ -297,26 +260,7 @@ class UploadService {
     const uploadTimer = `Regular-upload-${file.originalname}`;
     console.time(uploadTimer);
     
-    debugRegular(
-      `Uploading regular file: ${file.originalname} (${(
-        file.size /
-        1024 /
-        1024
-      ).toFixed(2)}MB)`
-    );
-
-    // DEBUG: Log all file properties to understand mobile upload differences
-    debugRegular(`File object details:`, {
-      originalname: file.originalname,
-      filename: file.filename,
-      fieldname: file.fieldname,
-      mimetype: file.mimetype,
-      size: file.size,
-      bufferLength: file.buffer ? file.buffer.length : "no buffer",
-      encoding: file.encoding,
-    });
-
-    const objectName = folderPath
+     const objectName = folderPath
       ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
       : file.originalname;
 
@@ -409,9 +353,6 @@ class UploadService {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      debugBatch(
-        `Processing file ${i + 1}/${files.length}: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB, ${file.mimetype})`
-      );
       
       try {
         const results = await this.processAndUploadFile(

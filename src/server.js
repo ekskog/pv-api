@@ -27,7 +27,7 @@ const sseConnections = new Map();
 const sendSSEEvent = (jobId, eventType, data) => {
   const connection = sseConnections.get(jobId);
   if (!connection) {
-    debugSSE(`No connection found for job ${jobId}`);
+    debugSSE(`[${new Date().toISOString()}] No connection found for job ${jobId}`);
     return;
   }
 
@@ -41,9 +41,9 @@ const sendSSEEvent = (jobId, eventType, data) => {
 
   try {
     connection.write(message);
-    debugSSE(`LINE 46 - Event ${message} sent successfully to job ${jobId}`);
+    debugSSE(`[${new Date().toISOString()}] Event ${message} sent successfully to job ${jobId}`);
   } catch (error) {
-    debugSSE(`Error sending to job ${jobId}: ${error.message}`);
+    debugSSE(`[${new Date().toISOString()}] Error sending to job ${jobId}: ${error.message}`);
     // Remove failed connection
     sseConnections.delete(jobId);
   }
@@ -95,7 +95,6 @@ const uploadService = new UploadService(minioClient);
 
 // Health check route
 app.get("/health", async (req, res) => {
-  debugEndpoints("get /health");
   debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
 
   let minioHealthy = false;
@@ -116,8 +115,6 @@ app.get("/health", async (req, res) => {
   try {
     const converterUrl = process.env.AVIF_CONVERTER_URL;
     const timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT, 10);
-
-    debugHealth(`Checking converter at ${converterUrl}`);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -163,10 +160,8 @@ app.get("/health", async (req, res) => {
 
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
-  debugEndpoints("get /processing-status/:jobId");
-
   const jobId = req.params.jobId;
-  debugSSE(`Client connecting for job ${jobId}`);
+  debugSSE(`[${new Date().toISOString()}] Client connecting for job ${jobId}`);
 
   // Set SSE headers
   res.writeHead(200, {
@@ -179,9 +174,7 @@ app.get("/processing-status/:jobId", (req, res) => {
 
   // Store connection
   sseConnections.set(jobId, res);
-  debugSSE(
-    `Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`
-  );
+  debugSSE(`[${new Date().toISOString()}] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
 
   // Send initial connection confirmation
   const confirmationData = JSON.stringify({
@@ -191,23 +184,22 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   res.write(`data: ${confirmationData}\n\n`);
-  debugSSE(`Sent ${confirmationData} for job ${jobId}`);
+  debugSSE(`[${new Date().toISOString()}] Sent ${confirmationData} for job ${jobId}`);
 
   // Handle client disconnect
   req.on("close", () => {
-    debugSSE(`Client disconnected for job ${jobId}`);
+    debugSSE(`[${new Date().toISOString()}] Client disconnected for job ${jobId}`);
     sseConnections.delete(jobId);
   });
 
   req.on("error", (error) => {
-    debugSSE(`Request error for job ${jobId}: ${error.message}`);
+    debugSSE(`[${new Date().toISOString()}] Request error for job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   });
 });
 
 // GET /albums - List all albums (public access for album browsing)
 app.get("/albums", async (req, res) => {
-  debugEndpoints("get /albums");
   try {
     const folderSet = new Set();
 
@@ -249,10 +241,7 @@ app.get("/albums", async (req, res) => {
 
 // List objects in a bucket (Admin only)
 app.get("/buckets/:bucketName/objects", async (req, res) => {
-  debugEndpoints("get /buckets/:bucketName/objects");
-  debugMinio(
-    `Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}}`
-  );
+  debugMinio(`Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}}`);
   try {
     const { bucketName } = req.params;
     const { prefix = "" } = req.query;
@@ -331,17 +320,9 @@ app.post(
   authenticateToken,
   requireRole("admin"),
   async (req, res) => {
-    debugEndpoints("post /buckets/:bucketName/folders");
     try {
       const { bucketName } = req.params;
       const { folderPath } = req.body;
-
-      debugAlbum(`Extracted folderPath: "${folderPath}"`);
-
-      // Check if bucket exists
-      debugAlbum(`Checking if bucket exists: ${bucketName}`);
-      const bucketExists = await minioClient.bucketExists(bucketName);
-      debugAlbum(`Bucket exists: ${bucketExists}`);
 
       // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
       let cleanPath = folderPath.trim();
@@ -360,10 +341,6 @@ app.post(
       const normalizedPath = `${cleanPath}/`;
       debugAlbum(`Final normalized path: "${normalizedPath}"`);
 
-      // Check if folder already exists by looking for any objects with this prefix
-      debugAlbum(
-        `Checking for existing objects with prefix: "${normalizedPath}"`
-      );
       const existingObjects = [];
       const stream = minioClient.listObjectsV2(
         bucketName,
@@ -372,15 +349,12 @@ app.post(
       );
 
       for await (const obj of stream) {
-        debugAlbum(`Found existing object: ${obj.name}`);
         existingObjects.push(obj);
         break; // We only need to check if any object exists with this prefix
       }
 
       if (existingObjects.length > 0) {
-        debugAlbum(
-          `ERROR: Folder already exists (${existingObjects.length} objects found)`
-        );
+        debugAlbum(`ERROR: Folder already exists (${existingObjects.length} objects found)`);
         return res.status(409).json({
           success: false,
           error: "Folder already exists",
@@ -407,7 +381,7 @@ app.post(
         JSON.stringify(initialMetadata, null, 2)
       );
 
-      const putResult = await minioClient.putObject(
+      await minioClient.putObject(
         bucketName,
         metadataPath,
         metadataContent,
@@ -442,7 +416,6 @@ app.post(
   authenticateToken,
   upload.array("files"),
   async (req, res) => {
-    debugEndpoints("post /buckets/:bucketName/upload");
     const startTime = Date.now();
     const jobId = uuidv4(); // Generate unique job ID for this upload
 
@@ -468,18 +441,6 @@ app.post(
         });
       }
 
-      debugUpload(
-        "Files to upload:",
-        files.map(
-          (file, index) =>
-            `${index + 1}. ${file.originalname} (${(
-              file.size /
-              1024 /
-              1024
-            ).toFixed(2)}MB, ${file.mimetype})`
-        )
-      );
-
       const response = {
         success: true,
         message: "Files received successfully and are being processed",
@@ -494,7 +455,6 @@ app.post(
       };
 
       res.status(200).json(response);
-
       processFilesInBackground(files, bucketName, folderPath, startTime, jobId);
     } catch (error) {
       const errorTime = Date.now() - startTime;
@@ -502,7 +462,6 @@ app.post(
         error: error.message,
         stack: error.stack,
       });
-      debugUpload("Upload request failed");
 
       res.status(500).json({
         success: false,
@@ -514,7 +473,6 @@ app.post(
 
 // GET /buckets/:bucketName/download - Get/download a specific object (Public access for images)
 app.get("/buckets/:bucketName/download", async (req, res) => {
-  debugEndpoints("get /buckets/:bucketName/download");
   try {
     const { bucketName } = req.params;
     const { object } = req.query;
@@ -526,20 +484,10 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
       });
     }
 
-    debugUpload("About to stream object:", {
-      bucketName,
-      object,
-    });
-
     // Stream the object directly to the response
     const objectStream = await minioClient.getObject(bucketName, object);
-    debugUpload("Object stream created successfully");
-
     // Retrieve object metadata
     const objectStat = await minioClient.statObject(bucketName, object);
-
-    debugUpload("Object metadata retrieved successfully:", objectStat);
-
     // Set appropriate headers
     res.setHeader(
       "Content-Type",
@@ -563,6 +511,35 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
   }
 });
 
+// DELETE /buckets/:bucketName/upload - Delete objects(s) from a bucket
+app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) => {
+  const { bucketName } = req.params;
+  const { objectName } = req.body; // Example: "TEST/01.avif"
+
+  try {
+    await minioClient.removeObject(bucketName, objectName);
+
+    debugUpload("Deleted object:", {
+      bucket: bucketName,
+      object: objectName,
+      user: req.user?.username || "unknown",
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Object ${objectName} deleted from ${bucketName}`,
+    });
+  } catch (error) {
+    debugUpload("Delete error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete object. " + error.message,
+    });
+  }
+});
+
+
 // Start server with database initialization
 async function startServer() {
   try {
@@ -571,30 +548,18 @@ async function startServer() {
 
     // Start HTTP server
     app.listen(PORT, () => {
-      const authMode = process.env.AUTH_MODE || "demo";
-      const k8sService =
-        process.env.K8S_SERVICE_NAME || "photovault-api-service";
-      const k8sNamespace = process.env.K8S_NAMESPACE || "webapps";
-      const publicUrl =
-        process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
-      debugServer(`Starting PhotoVault ${new Date()}...`);
-      debugServer(`> PhotoVault API server running on port ${PORT}`);
-      debugServer(
-        `> Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`
-      );
-      debugServer(`Health check (public): ${publicUrl}/health`);
-      debugServer(
-        `> Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`
-      );
-      debugServer(
-        `> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
-      );
-      debugServer(`Auth Mode: ${authMode}`);
-
-      if (authMode === "demo") {
-        debugServer("Demo users available: admin/admin123, user/user123");
-      }
-    });
+      //const authMode = process.env.AUTH_MODE || "demo";
+      //const k8sService = process.env.K8S_SERVICE_NAME || "photovault-api-service";
+      //const k8sNamespace = process.env.K8S_NAMESPACE || "webapps";
+      //const publicUrl = process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
+      //debugServer(`Starting PhotoVault ${new Date()}...`);
+      //debugServer(`> PhotoVault API server running on port ${PORT}`);
+      //debugServer(`> Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`);
+      //debugServer(`Health check (public): ${publicUrl}/health`);
+      //debugServer(`> Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`);
+      //debugServer(`> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`);
+      //debugServer(`Auth Mode: ${authMode}`);
+      });
   } catch (error) {
     debugServer("Failed to start server:", error.message);
     process.exit(1);
@@ -619,9 +584,7 @@ async function processFilesInBackground(
       const file = files[i];
 
       try {
-        debugUpload(
-          `Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`
-        );
+        debugUpload(`Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -633,9 +596,7 @@ async function processFilesInBackground(
 
         debugUpload(`Successfully processed: ${file.originalname}`);
       } catch (error) {
-        debugUpload(
-          `Error processing file ${file.originalname}: ${error.message}`
-        );
+        debugUpload(`Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -644,9 +605,7 @@ async function processFilesInBackground(
     }
 
     const processingTime = Date.now() - startTime;
-    debugUpload(
-      `Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
-    );
+    debugUpload(`Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
 
     // Send single completion message
     if (errors.length === 0) {
@@ -750,8 +709,6 @@ async function countAlbums(bucketName) {
 
     objectsStream.on("end", () => {
       const albums = [...folderSet];
-      debugMinio(`Number of ALBUMS: ${albums.length}`);
-      debugMinio(albums);
       resolve(albums);
     });
 
@@ -761,6 +718,5 @@ async function countAlbums(bucketName) {
     });
   });
 }
-
 // Start the server
 startServer();

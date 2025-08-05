@@ -10,8 +10,6 @@ class AvifConverterService {
     // Consolidated microservice configuration
     this.converterUrl = process.env.AVIF_CONVERTER_URL;
     this.converterTimeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT);
-    
-    debugConverter(`Initialized with URL: ${this.converterUrl}, timeout: ${this.converterTimeout}ms`);
   }
 
   /**
@@ -20,7 +18,6 @@ class AvifConverterService {
    */
   async checkHealth() {
     try {
-      debugHealth(`Checking health at: ${this.converterUrl}/health`);
       
       const response = await fetch(`${this.converterUrl}/health`, {
         method: 'GET',
@@ -32,14 +29,12 @@ class AvifConverterService {
       }
       
       const data = await response.json();
-      debugHealth(`Health check successful:`, data);
       
       return {
         success: true,
         data: data
       };
     } catch (error) {
-      debugHealth(`Health check failed: ${error.message}`);
       return {
         success: false,
         error: error.message
@@ -57,17 +52,12 @@ class AvifConverterService {
  */
 async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
     try {
-      debugConversion(`Starting conversion for: ${originalName} (${mimeType})`);
-      debugConversion(`File buffer size: ${fileBuffer.length} bytes`);
 
       const endpoint = '/convert';
       const formData = new FormData();
       const blob = new Blob([fileBuffer], { type: mimeType });
       formData.append('image', blob, originalName);
       formData.append('mimeType', mimeType);
-
-      debugConversion(`Sending conversion request to: ${this.converterUrl}${endpoint}`);
-      debugConversion(`Request timeout: ${this.converterTimeout}ms`);
 
       const response = await fetch(`${this.converterUrl}${endpoint}`, {
         method: 'POST',
@@ -100,8 +90,6 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
         variant: 'full'
       });
 
-      debugConversion(`Processed: full-size (${responseData.data.fullSize.size}B) -> ${baseName}.avif`);
-
       return {
         success: true,
         data: {
@@ -110,7 +98,6 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       };
 
     } catch (error) {
-      debugConversion(`Conversion failed for ${originalName}: ${error.message}`);
       return {
         success: false,
         error: error.message
@@ -123,14 +110,12 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
    * @returns {Object} Health check result
    */
   async checkAllServicesHealth() {
-    debugHealth(`Checking all services health`);
     const health = await this.checkHealth();
     const result = {
       converter: health,
       overallStatus: health.success ? 'healthy' : 'degraded'
     };
     
-    debugHealth(`All services health check result:`, result);
     return result;
   }
 
@@ -139,10 +124,8 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
    * @returns {boolean} True if the microservice is available
    */
   async isAvailable() {
-    debugHealth(`Checking if converter service is available`);
     const health = await this.checkHealth();
     const available = health.success;
-    debugHealth(`Converter service available: ${available}`);
     return available;
   }
 }
