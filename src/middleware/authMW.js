@@ -56,6 +56,8 @@ class AuthService {
   // Authenticate user based on auth mode
   static async authenticateUser(username, password) {
     const authMode = process.env.AUTH_MODE || 'demo'
+    console.log(`Authentication mode: ${authMode}`)
+  
     
     if (authMode === 'demo') {
       return this.authenticateDemoUser(username, password)

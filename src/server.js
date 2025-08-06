@@ -9,7 +9,9 @@ const { v4: uuidv4 } = require("uuid");
 // Import authentication components
 const database = require("./config/database");
 const authRoutes = require("./routes/auth");
-const { authenticateToken, requireRole } = require("./middleware/auth");
+const userRoutes = require("./routes/user");
+
+const { authenticateToken, requireRole } = require("./middleware/authMW");
 
 // Debug namespaces
 const debugServer = debug("photovault:server");
@@ -19,7 +21,6 @@ const debugUpload = debug("photovault:upload");
 const debugMinio = debug("photovault:minio");
 const debugAuth = debug("photovault:auth");
 const debugAlbum = debug("photovault:album");
-const debugEndpoints = debug("photovault:endpoints");
 
 // Store active SSE connections by job ID
 const sseConnections = new Map();
@@ -89,6 +90,7 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 app.use("/auth", authRoutes);
+app.use("/user", userRoutes);
 
 // Initialize Services
 const uploadService = new UploadService(minioClient);
@@ -193,7 +195,6 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   req.on("error", (error) => {
-    debugSSE(`[${new Date().toISOString()}] Request error for job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   });
 });
@@ -544,8 +545,9 @@ app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) =
 async function startServer() {
   try {
     // Initialize database connection
-    await initializeDatabase();
+    let connectionPool = await initializeDatabase();
 
+    debugServer("Database initialized successfully");
     // Start HTTP server
     app.listen(PORT, () => {
       //const authMode = process.env.AUTH_MODE || "demo";

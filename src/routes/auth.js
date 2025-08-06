@@ -1,13 +1,15 @@
 // Authentication routes
 const express = require('express')
-const { AuthService, authenticateToken } = require('../middleware/auth')
+const { AuthService, authenticateToken } = require('../middleware/authMW')
 
 const router = express.Router()
+
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body
+    console.log("Logging in user:", username)
 
     // Validate input
     if (!username || !password) {
@@ -125,4 +127,4 @@ router.post('/refresh', authenticateToken, async (req, res) => {
   }
 })
 
-module.exports = router
+module.exports = router;
