@@ -681,14 +681,14 @@ process.on("SIGINT", async () => {
 
 // Initialize database connection if not in demo mode
 async function initializeDatabase() {
-  const authMode = process.env.AUTH_MODE;
+  //const authMode = process.env.AUTH_MODE;
 
   //if (authMode === "database") {
     try {
       await database.initialize();
     } catch (error) {
       debugAuth("Database initialization failed:", error.message);
-      process.env.AUTH_MODE = "demo";
+      //process.env.AUTH_MODE = "demo";
     }
   /*} else {
     debugAuth("Running in demo authentication mode");
