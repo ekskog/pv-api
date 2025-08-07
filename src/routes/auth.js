@@ -1,9 +1,10 @@
+
 // Authentication routes
 const express = require('express')
-const { AuthService, authenticateToken } = require('../middleware/authMW')
-
+const { AuthService, authenticateToken, requireRole } = require('../middleware/authMW')
 const router = express.Router()
 
+const database = require('../config/database');
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
@@ -127,4 +128,74 @@ router.post('/refresh', authenticateToken, async (req, res) => {
   }
 })
 
+// PUT /auth/change-password - Change user password (self-service)
+router.put('/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Old password and new password are required'
+      });
+    }
+
+    // Authenticate old password
+    const user = await AuthService.authenticateUser(req.user.username, oldPassword);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Old password is incorrect'
+      });
+    }
+
+    // Update password in database
+    const connection = await database.getConnection().getConnection();
+    const bcrypt = require('bcryptjs');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await connection.execute(
+      'UPDATE users SET password_hash = ? WHERE id = ?',
+      [passwordHash, req.user.id]
+    );
+    connection.release();
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to change password'
+    });
+  }
+});
+
+// PUT /auth/change-password - Change user password (admin service)
+router.put('/auth/users/:id/password', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    const userId = req.params.id;
+
+    if (!newPassword) {
+      return res.status(400).json({ success: false, error: 'New password is required' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    const database = require('../config/database');
+    const connection = await database.getConnection().getConnection();
+    await connection.execute(
+      'UPDATE users SET password_hash = ? WHERE id = ?',
+      [passwordHash, userId]
+    );
+    connection.release();
+
+    res.json({ success: true, message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('Admin password reset error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to reset password' });
+  }
+});
 module.exports = router;

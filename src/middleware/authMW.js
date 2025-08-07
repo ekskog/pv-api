@@ -88,6 +88,8 @@ class AuthService {
     }
   }
 
+ 
+
   // Get user by ID
   static async getUserById(userId) {
     const authMode = process.env.AUTH_MODE || 'demo'

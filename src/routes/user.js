@@ -2,6 +2,24 @@ const express = require("express");
 const router = express.Router();
 const database = require("../config/database");
 
+router.get("/", async (req, res) => {
+  try {
+    const users = await database.getAllUsers();
+    // Format to only send username and role
+    const formatted = users.map(u => ({ username: u.username, role: u.role }));
+    res.json({
+      success: true,
+      data: formatted,
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
 router.post("/register", async (req, res) => {
   try {
     const { username, password, email } = req.body;

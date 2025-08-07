@@ -185,6 +185,23 @@ async createUserIfNotExists({ username, email, password, role }) {
     }
   }
 
+  // Get all users
+  async getAllUsers() {
+    const connection = await this.pool.getConnection();
+    console.log("Fetching all users");
+    if (!this.isInitialized) {
+      throw new Error("Database not initialized. Call initialize() first.");
+    }
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, username, email, role, is_active, created_at, last_login FROM users"
+      );
+      return rows;
+    } finally {
+      connection.release();
+    }
+  }
+
   // Create new user
   async createUser({ username, email, password, role = "user" }) {
     const connection = await this.pool.getConnection();
