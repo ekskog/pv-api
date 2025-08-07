@@ -94,7 +94,7 @@ router.post('/logout', authenticateToken, (req, res) => {
 
 // GET /auth/status - Check authentication status and mode
 router.get('/status', (req, res) => {
-  const authMode = process.env.AUTH_MODE || 'demo'
+  const authMode = process.env.AUTH_MODE
   
   res.json({
     success: true,

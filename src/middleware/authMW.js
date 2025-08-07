@@ -6,6 +6,7 @@ const database = require('../config/database')
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h'
 
+/*
 // Demo users for development mode
 const demoUsers = {
   admin: {
@@ -29,6 +30,7 @@ const demoCredentials = {
   admin: 'admin123',
   user: 'user123'
 }
+*/
 
 class AuthService {
   
@@ -55,17 +57,18 @@ class AuthService {
 
   // Authenticate user based on auth mode
   static async authenticateUser(username, password) {
-    const authMode = process.env.AUTH_MODE || 'demo'
+    const authMode = process.env.AUTH_MODE
     console.log(`Authentication mode: ${authMode}`)
   
-    
+/*    
     if (authMode === 'demo') {
       return this.authenticateDemoUser(username, password)
-    } else {
+    } else {*/
       return this.authenticateDatabaseUser(username, password)
-    }
+    //}
   }
 
+  /*
   // Demo authentication
   static async authenticateDemoUser(username, password) {
     const user = demoUsers[username]
@@ -77,7 +80,7 @@ class AuthService {
     
     return null
   }
-
+*/
   // Database authentication
   static async authenticateDatabaseUser(username, password) {
     try {
@@ -88,24 +91,22 @@ class AuthService {
     }
   }
 
- 
-
   // Get user by ID
   static async getUserById(userId) {
-    const authMode = process.env.AUTH_MODE || 'demo'
+    const authMode = process.env.AUTH_MODE
     
-    if (authMode === 'demo') {
+   /* if (authMode === 'demo') {
       // Find demo user by ID
       const user = Object.values(demoUsers).find(u => u.id === parseInt(userId))
       return user || null
-    } else {
+    } else {*/
       try {
         return await database.getUserById(userId)
       } catch (error) {
         console.error('Database getUserById error:', error.message)
         return null
       }
-    }
+    //}
   }
 }
 

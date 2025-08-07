@@ -550,7 +550,7 @@ async function startServer() {
     debugServer("Database initialized successfully");
     // Start HTTP server
     app.listen(PORT, () => {
-      //const authMode = process.env.AUTH_MODE || "demo";
+      //const authMode = process.env.AUTH_MODE ;
       //const k8sService = process.env.K8S_SERVICE_NAME || "photovault-api-service";
       //const k8sNamespace = process.env.K8S_NAMESPACE || "webapps";
       //const publicUrl = process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
@@ -683,16 +683,16 @@ process.on("SIGINT", async () => {
 async function initializeDatabase() {
   const authMode = process.env.AUTH_MODE;
 
-  if (authMode === "database") {
+  //if (authMode === "database") {
     try {
       await database.initialize();
     } catch (error) {
       debugAuth("Database initialization failed:", error.message);
       process.env.AUTH_MODE = "demo";
     }
-  } else {
+  /*} else {
     debugAuth("Running in demo authentication mode");
-  }
+  }*/
 }
 
 async function countAlbums(bucketName) {
