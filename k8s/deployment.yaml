@@ -16,6 +16,8 @@ spec:
       labels:
         app: photovault-api
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       hostAliases:
       - ip: "192.168.1.8"
         hostnames:

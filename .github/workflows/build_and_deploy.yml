@@ -77,6 +77,17 @@ jobs:
             exit 1
           fi
                     
+      - name: Create or Update Image Pull Secret
+        run: |
+          # Create or update the image pull secret for GHCR
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=ghcr.io \
+            --docker-username=$GITHUB_ACTOR \
+            --docker-password="${{ secrets.EK_GITHUB_PAT }}" \
+            --namespace=webapps \
+            --kubeconfig=kubeconfig.yaml \
+            --dry-run=client -o yaml | kubectl apply -f - --kubeconfig=kubeconfig.yaml
+
       - name: Deploy to Kubernetes
         run: |
           IMAGE_TAG=${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
