@@ -1,4 +1,4 @@
-// force rebuild on 10/08 08:07:35
+// force rebuild on 11/08 13:38
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -553,7 +553,7 @@ async function startServer() {
     app.listen(PORT, () => {
       //const authMode = process.env.AUTH_MODE ;
       //const k8sService = process.env.K8S_SERVICE_NAME || "photovault-api-service";
-      //const k8sNamespace = process.env.K8S_NAMESPACE || "webapps";
+      //const k8sNamespace = process.env.K8S_NAMESPACE || "photovault";
       //const publicUrl = process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
       //debugServer(`Starting PhotoVault ${new Date()}...`);
       //debugServer(`> PhotoVault API server running on port ${PORT}`);

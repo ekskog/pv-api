@@ -84,7 +84,7 @@ jobs:
             --docker-server=ghcr.io \
             --docker-username=$GITHUB_ACTOR \
             --docker-password="${{ secrets.EK_GITHUB_PAT }}" \
-            --namespace=webapps \
+            --namespace=photovault \
             --kubeconfig=kubeconfig.yaml \
             --dry-run=client -o yaml | kubectl apply -f - --kubeconfig=kubeconfig.yaml
 
@@ -101,6 +101,6 @@ jobs:
           sed -i "s|image: ghcr.io/ekskog/photovault-api:.*|image: $IMAGE_TAG|g" k8s/deployment.yaml
           
           # Apply the updated deployment YAML to ensure all changes (including ports) are applied
-          kubectl apply -f k8s/deployment.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
-          kubectl apply -f k8s/configmap.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
-          kubectl apply -f k8s/secrets.yaml --kubeconfig=kubeconfig.yaml --namespace=webapps
+          kubectl apply -f k8s/deployment.yaml --kubeconfig=kubeconfig.yaml --namespace=photovault
+          kubectl apply -f k8s/configmap.yaml --kubeconfig=kubeconfig.yaml --namespace=photovault
+          kubectl apply -f k8s/secrets.yaml --kubeconfig=kubeconfig.yaml --namespace=photovault
