@@ -4,6 +4,9 @@ const debug = require("debug");
 const debugMetadata = debug("photovault:metadata");
 const debugGps = debug("photovault:metadata:gps");
 
+console.log(debugMetadata.enabled);
+console.log(debugGps.enabled);
+
 /**
  * Optimized Metadata Service - Only extracts date and GPS location
  */

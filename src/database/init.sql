@@ -1,6 +1,7 @@
 -- PhotoVault Database Schema
 -- Run this script to initialize the database
-
+-- PhotoVault Database Schema
+CREATE DATABASE IF NOT EXISTS photovault;
 USE photovault;
 
 -- Create users table
