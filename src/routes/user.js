@@ -23,7 +23,6 @@ router.get("/", async (req, res) => {
 router.post("/register", async (req, res) => {
   try {
     const { username, password, email } = req.body;
-    console.log("Registering user:", username, email);
 
     // Validate input
     if (!username || !password || !email) {

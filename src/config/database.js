@@ -10,7 +10,6 @@ class Database {
 
   // Initialize database connection pool
   async initialize() {
-    console.log("Initializing database connection...");
     if (this.isInitialized) return;
 
     try {
@@ -27,20 +26,13 @@ class Database {
         connectTimeout: 60000, // Use this instead of acquireTimeout
       };
 
-      console.log("Initializing database connection pool...");
-      console.log(
-        `Connecting to: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`
-      );
-
       this.pool = mysql.createPool(dbConfig);
-      console.log("Database connection pool created");
 
       // Test connection
       const connection = await this.pool.getConnection();
       await connection.ping();
       connection.release();
 
-      console.log("Database connection pool initialized successfully");
       this.isInitialized = true;
 
       // Initialize default users if they don't exist
@@ -105,8 +97,7 @@ async createUserIfNotExists({ username, email, password, role }) {
       [username, email, passwordHash, role]
     );
     
-    console.log(`Created user: ${username} (${role})`);
-    
+   
     // Return user data with the new ID
     return { 
       id: result.insertId,
@@ -130,14 +121,12 @@ async createUserIfNotExists({ username, email, password, role }) {
   // User authentication methods
   async authenticateUser(username, password) {
 
-    console.log("Authenticating user:", username);
     const connection = await this.pool.getConnection();
     try {
       const [rows] = await connection.execute(
         "SELECT id, username, email, password_hash, role, is_active FROM users WHERE username = ? AND is_active = TRUE",
         [username]
       );
-      console.log(rows);
       if (rows.length === 0) {
         return null; // User not found
       }
@@ -145,7 +134,6 @@ async createUserIfNotExists({ username, email, password, role }) {
       const user = rows[0];
       const isValid = await bcrypt.compare(password, user.password_hash);
 
-      console.log(`Password valid: ${isValid}`);
 
       if (!isValid) {
         return null; // Invalid password
@@ -188,7 +176,6 @@ async createUserIfNotExists({ username, email, password, role }) {
   // Get all users
   async getAllUsers() {
     const connection = await this.pool.getConnection();
-    console.log("Fetching all users");
     if (!this.isInitialized) {
       throw new Error("Database not initialized. Call initialize() first.");
     }
@@ -236,7 +223,6 @@ async createUserIfNotExists({ username, email, password, role }) {
     if (this.pool) {
       await this.pool.end();
       this.isInitialized = false;
-      console.log("Database connection pool closed");
     }
   }
 }

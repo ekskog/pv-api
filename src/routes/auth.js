@@ -10,7 +10,6 @@ const database = require('../config/database');
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body
-    console.log("Logging in user:", username)
 
     // Validate input
     if (!username || !password) {
