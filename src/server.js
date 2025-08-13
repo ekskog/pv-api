@@ -29,7 +29,7 @@ const sseConnections = new Map();
 const sendSSEEvent = (jobId, eventType, data) => {
   const connection = sseConnections.get(jobId);
   if (!connection) {
-    debugSSE(`[${new Date().toISOString()}] No connection found for job ${jobId}`);
+    debugSSE(`[[server.js LINE 32]: ${new Date().toISOString()}] No connection found for job ${jobId}`);
     return;
   }
 
@@ -43,9 +43,9 @@ const sendSSEEvent = (jobId, eventType, data) => {
 
   try {
     connection.write(message);
-    debugSSE(`[${new Date().toISOString()}] Event ${message} sent successfully to job ${jobId}`);
+    debugSSE(`[[server.js LINE 46]: ${new Date().toISOString()}] Event ${message} sent successfully to job ${jobId}`);
   } catch (error) {
-    debugSSE(`[${new Date().toISOString()}] Error sending to job ${jobId}: ${error.message}`);
+    debugSSE(`[server.js LINE 48]: ${new Date().toISOString()}] Error sending to job ${jobId}: ${error.message}`);
     // Remove failed connection
     sseConnections.delete(jobId);
   }
@@ -109,9 +109,9 @@ app.get("/health", async (req, res) => {
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
     albumsCount = albums.length;
     minioHealthy = true;
-    debugHealth(`MinIO healthy, ${albumsCount} albums`);
+    debugHealth(`[server.js LINE 112]: MinIO healthy, ${albumsCount} albums`);
   } catch (error) {
-    debugHealth(`MinIO failure: ${error.message}`);
+    debugHealth(`[server.js LINE 114]: MinIO failure: ${error.message}`);
   }
 
   // Converter check
@@ -130,12 +130,12 @@ app.get("/health", async (req, res) => {
 
     if (response.ok) {
       converterHealthy = true;
-      debugHealth(`Converter is healthy`);
+      debugHealth(`[server.js LINE 133]: Converter is healthy`);
     } else {
-      debugHealth(`Converter unhealthy: ${response.status}`);
+      debugHealth(`[server.js LINE 135]: Converter unhealthy: ${response.status}`);
     }
   } catch (error) {
-    debugHealth(`Converter failure: ${error.message}`);
+    debugHealth(`[server.js LINE 138]: Converter failure: ${error.message}`);
   }
 
   // Compose response
@@ -143,7 +143,7 @@ app.get("/health", async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  debugHealth(`Responding with ${status} (${code})`);
+  debugHealth(`[server.js LINE 146]: Responding with ${status} (${code})`);
   res.status(code).json({
     status,
     timestamp: new Date().toISOString(),
@@ -164,7 +164,7 @@ app.get("/health", async (req, res) => {
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
   const jobId = req.params.jobId;
-  debugSSE(`[${new Date().toISOString()}] Client connecting for job ${jobId}`);
+  debugSSE(`[[server.js LINE 167]: ${new Date().toISOString()}] Client connecting for job ${jobId}`);
 
   // Set SSE headers
   res.writeHead(200, {
@@ -177,7 +177,7 @@ app.get("/processing-status/:jobId", (req, res) => {
 
   // Store connection
   sseConnections.set(jobId, res);
-  debugSSE(`[${new Date().toISOString()}] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
+  debugSSE(`[server.js LINE 180]: ${new Date().toISOString()}] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
 
   // Send initial connection confirmation
   const confirmationData = JSON.stringify({
@@ -187,11 +187,11 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   res.write(`data: ${confirmationData}\n\n`);
-  debugSSE(`[${new Date().toISOString()}] Sent ${confirmationData} for job ${jobId}`);
+  debugSSE(`[[server.js LINE 190]: ${new Date().toISOString()}] Sent ${confirmationData} for job ${jobId}`);
 
   // Handle client disconnect
   req.on("close", () => {
-    debugSSE(`[${new Date().toISOString()}] Client disconnected for job ${jobId}`);
+    debugSSE(`[server.js LINE 194]: ${new Date().toISOString()}] Client disconnected for job ${jobId}`);
     sseConnections.delete(jobId);
   });
 
@@ -220,12 +220,12 @@ app.get("/albums", async (req, res) => {
     });
 
     objectsStream.on("end", () => {
-      debugMinio(`Number of top-level folders: ${folderSet.size}`);
-      debugMinio([...folderSet]);
+      debugMinio(`[server.js LINE 223]: Number of top-level folders: ${folderSet.size}`);
+      debugMinio(`[server.js LINE 224]: ${JSON.stringify([...folderSet], null, 2)}`);
     });
 
     objectsStream.on("error", (err) => {
-      debugMinio("Error listing objects:", err);
+      debugMinio(`[server.js LINE 228]: Error listing objects: ${err}`);
     });
     res.json({
       success: true,
@@ -308,7 +308,7 @@ app.get("/buckets/:bucketName/objects", async (req, res) => {
 
     res.json(responseData);
   } catch (error) {
-    debugMinio("Error in GET /buckets/:bucketName/objects:", error.message);
+    debugMinio("[server.js LINE 311]: Error in GET /buckets/:bucketName/objects:", error.message);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -333,7 +333,7 @@ app.post(
       cleanPath = cleanPath.replace(/\/+/g, "/"); // Replace multiple slashes with single slash
 
       if (!cleanPath) {
-        debugAlbum(`ERROR: Invalid folder path after cleaning`);
+        debugAlbum(`[server.js LINE 336]: ERROR: Invalid folder path after cleaning`);
         return res.status(400).json({
           success: false,
           error: "Invalid folder path",
@@ -341,7 +341,7 @@ app.post(
       }
 
       const normalizedPath = `${cleanPath}/`;
-      debugAlbum(`Final normalized path: "${normalizedPath}"`);
+      debugAlbum(`[server.js LINE 344]: Final normalized path: "${normalizedPath}"`);
 
       const existingObjects = [];
       const stream = minioClient.listObjectsV2(
@@ -356,7 +356,7 @@ app.post(
       }
 
       if (existingObjects.length > 0) {
-        debugAlbum(`ERROR: Folder already exists (${existingObjects.length} objects found)`);
+        debugAlbum(`[server.js LINE 359]: ERROR: Folder already exists (${existingObjects.length} objects found)`);
         return res.status(409).json({
           success: false,
           error: "Folder already exists",
@@ -426,7 +426,7 @@ app.post(
       const { folderPath = "" } = req.body;
       const files = req.files;
 
-      debugUpload(`Upload request received:`, {
+      debugUpload(`[server.js LINE 429]: Upload request received:`, {
         jobId,
         bucket: bucketName,
         folder: folderPath,
@@ -436,7 +436,7 @@ app.post(
       });
 
       if (!files || files.length === 0) {
-        debugUpload("Upload failed: No files provided");
+        debugUpload(`[server.js LINE 439]: Upload failed: No files provided`);
         return res.status(400).json({
           success: false,
           error: "No files provided",
@@ -460,7 +460,7 @@ app.post(
       processFilesInBackground(files, bucketName, folderPath, startTime, jobId);
     } catch (error) {
       const errorTime = Date.now() - startTime;
-      debugUpload(`Upload error occurred after ${errorTime}ms:`, {
+      debugUpload(`[server.js LINE 463]: Upload error occurred after ${errorTime}ms:`, {
         error: error.message,
         stack: error.stack,
       });
@@ -521,7 +521,7 @@ app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) =
   try {
     await minioClient.removeObject(bucketName, objectName);
 
-    debugUpload("Deleted object:", {
+    debugUpload(`[server.js LINE 524]: Deleted object:`, {
       bucket: bucketName,
       object: objectName,
       user: req.user?.username || "unknown",
@@ -533,7 +533,7 @@ app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) =
       message: `Object ${objectName} deleted from ${bucketName}`,
     });
   } catch (error) {
-    debugUpload("Delete error:", error);
+    debugUpload(`[server.js LINE 536]: Delete error:`, error);
     res.status(500).json({
       success: false,
       error: "Failed to delete object. " + error.message,
@@ -548,7 +548,7 @@ async function startServer() {
     // Initialize database connection
     let connectionPool = await initializeDatabase();
 
-    debugServer("Database initialized successfully");
+    debugServer(`[server.js LINE 551]: Database initialized successfully`);
     // Start HTTP server
     app.listen(PORT, () => {
       //const authMode = process.env.AUTH_MODE ;
@@ -564,7 +564,7 @@ async function startServer() {
       //debugServer(`Auth Mode: ${authMode}`);
       });
   } catch (error) {
-    debugServer("Failed to start server:", error.message);
+    debugServer(`[server.js LINE 567]: Failed to start server:`, error.message);
     process.exit(1);
   }
 }
@@ -587,7 +587,7 @@ async function processFilesInBackground(
       const file = files[i];
 
       try {
-        debugUpload(`Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
+        debugUpload(`[server.js LINE 590]: Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -597,9 +597,9 @@ async function processFilesInBackground(
         );
         uploadResults.push(result);
 
-        debugUpload(`Successfully processed: ${file.originalname}`);
+        debugUpload(`[server.js LINE 600]: Successfully processed: ${file.originalname}`);
       } catch (error) {
-        debugUpload(`Error processing file ${file.originalname}: ${error.message}`);
+        debugUpload(`[server.js LINE 602]: Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -608,7 +608,7 @@ async function processFilesInBackground(
     }
 
     const processingTime = Date.now() - startTime;
-    debugUpload(`Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
+    debugUpload(`[server.js LINE 611]: Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
 
     // Send single completion message
     if (errors.length === 0) {
@@ -647,12 +647,12 @@ async function processFilesInBackground(
 
     // Clean up SSE connections after 30 seconds
     setTimeout(() => {
-      debugUpload(`Cleaning up SSE connections for job ${jobId}`);
+      debugUpload(`[server.js LINE 650]: Cleaning up SSE connections for job ${jobId}`);
       sseConnections.delete(jobId);
     }, 300000);
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    debugUpload(`Background processing error after ${errorTime}ms:`, {
+    debugUpload(`[server.js LINE 655]: Background processing error after ${errorTime}ms:`, {
       error: error.message,
       stack: error.stack,
     });
@@ -673,7 +673,7 @@ async function processFilesInBackground(
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  debugServer("Shutting down server...");
+  debugServer(`[server.js LINE 676]: Shutting down server...`);
   if (process.env.AUTH_MODE === "database") {
     await database.close();
   }
@@ -687,7 +687,7 @@ async function initializeDatabase() {
     try {
       await database.initialize();
     } catch (error) {
-      debugAuth("Database initialization failed:", error.message);
+      debugAuth(`[server.js LINE 690]: Database initialization failed:`, error.message);
       //process.env.AUTH_MODE = "demo";
     }
   /*} else {
@@ -715,7 +715,7 @@ async function countAlbums(bucketName) {
     });
 
     objectsStream.on("error", (err) => {
-      debugMinio("Error listing objects:", err);
+      debugMinio(`[server.js LINE 718]: Error listing objects:`, err);
       reject(err);
     });
   });

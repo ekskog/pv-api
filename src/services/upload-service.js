@@ -63,7 +63,7 @@ class UploadService {
       }
     } catch (error) {
       // NO FALLBACK - If AVIF conversion fails, fail the entire upload
-      debugUpload(`AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
+      debugUpload(`[upload-service.js LINE 66]: AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
       throw error;
     } finally {
       // Force garbage collection if available
@@ -71,7 +71,7 @@ class UploadService {
         global.gc();
         const memAfterGC = process.memoryUsage();
         debugMemory(
-          `Memory after GC: ${(
+          `[upload-service.js LINE 74]: Memory after GC: ${(
             memAfterGC.heapUsed /
             1024 /
             1024
@@ -103,7 +103,7 @@ class UploadService {
       );
 
       // Process the actual file contents returned from microservice
-      debugImage(`Processing file contents from microservice for ${file.originalname}`);
+      debugImage(`[upload-service.js LINE 106]: Processing file contents from microservice for ${file.originalname}`);
       const variants = this._processFileContentsFromMicroservice(
         conversionResult.data.files
       );
@@ -139,10 +139,10 @@ class UploadService {
         };
       }
 
-      debugImage(`Image processing completed for ${file.originalname}`);
+      debugImage(`[upload-service.js LINE 142]: Image processing completed for ${file.originalname}`);
       return uploadResult;
     } catch (error) {
-      debugImage(`${mimetype} processing failed for ${file.originalname}: ${error.message}`);
+      debugImage(`[upload-service.js LINE 145]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
       throw error;
     }
   }
@@ -163,7 +163,7 @@ class UploadService {
     const fileSizeMB = file.size / 1024 / 1024;
     if (fileSizeMB > maxSizeMB) {
       debugVideo(
-        `Video file too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`
+        `[upload-service.js LINE 166]: Video file too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`
       );
       throw new Error(
         `Video file too large: ${fileSizeMB.toFixed(
@@ -178,7 +178,7 @@ class UploadService {
         ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
         : file.originalname;
 
-      debugVideo(`Uploading video to MinIO: ${objectName}`);
+      debugVideo(`[upload-service.js LINE 181]: Uploading video to MinIO: ${objectName}`);
 
       // Upload directly to MinIO with video-specific metadata
       const uploadInfo = await this.minioClient.putObject(
@@ -227,7 +227,7 @@ class UploadService {
 
     for (const fileData of microserviceFiles) {
       try {
-        debugImage(`Processing variant ${fileData.variant}: ${fileData.filename}`);
+        debugImage(`[upload-service.js LINE 230]: Processing variant ${fileData.variant}: ${fileData.filename}`);
         
         // Decode base64 content back to buffer
         const fileBuffer = Buffer.from(fileData.content, "base64");
@@ -240,16 +240,16 @@ class UploadService {
         };
 
         debugImage(
-          `Processed ${fileData.variant} variant: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
+          `[upload-service.js LINE 243]: Processed ${fileData.variant} variant: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
         );
       } catch (error) {
         debugImage(
-          `Failed to process file ${fileData.filename}: ${error.message}`
+          `[upload-service.js LINE 247]: Failed to process file ${fileData.filename}: ${error.message}`
         );
       }
     }
 
-    debugImage(`Successfully processed ${Object.keys(variants).length} variants`);
+    debugImage(`[upload-service.js LINE 252]: Successfully processed ${Object.keys(variants).length} variants`);
     return variants;
   }
 
@@ -264,8 +264,8 @@ class UploadService {
       ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
       : file.originalname;
 
-    debugRegular(`Target object name: "${objectName}"`);
-    debugRegular(`MinIO putObject params:`, {
+    debugRegular(`[upload-service.js LINE 267]: Target object name: "${objectName}"`);
+    debugRegular(`[upload-service.js LINE 268]: MinIO putObject params:`, {
       bucket: bucketName,
       objectName: objectName,
       bufferSize: file.buffer ? file.buffer.length : "no buffer",
@@ -287,7 +287,7 @@ class UploadService {
       
       console.timeEnd(uploadTimer);
       debugRegular(
-        `Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
+        `[upload-service.js LINE 290]: Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
       );
 
       return [
@@ -302,7 +302,7 @@ class UploadService {
       ];
     } catch (error) {
       console.timeEnd(uploadTimer);
-      debugRegular(`Regular file upload failed for ${file.originalname}: ${error.message}`);
+      debugRegular(`[upload-service.js LINE 305]: Regular file upload failed for ${file.originalname}: ${error.message}`);
       throw error;
     }
   }
@@ -332,11 +332,11 @@ class UploadService {
       );
 
       debugMetadata(
-        `Successfully updated JSON metadata for ${uploadResult.objectName}`
+        `[upload-service.js LINE 335]: Successfully updated JSON metadata for ${uploadResult.objectName}`
       );
     } catch (error) {
       throw new Error(
-        ` LINE 395 - Failed to update JSON metadata for ${uploadResult.objectName}: ${error.message}`
+        ` LINE 339 - Failed to update JSON metadata for ${uploadResult.objectName}: ${error.message}`
       );
     }
   }
@@ -346,7 +346,7 @@ class UploadService {
    */
   async processMultipleFiles(files, bucketName, folderPath = "") {
     debugBatch(
-      `Starting batch processing of ${files.length} files`
+      `[upload-service.js LINE 349]: Starting batch processing of ${files.length} files`
     );
     const allResults = [];
     const errors = [];
@@ -362,11 +362,11 @@ class UploadService {
         );
         allResults.push(...results);
         debugBatch(
-          `Successfully processed file ${i + 1}/${files.length}: ${file.originalname} (${results.length} variants)`
+          `[upload-service.js LINE 365]: Successfully processed file ${i + 1}/${files.length}: ${file.originalname} (${results.length} variants)`
         );
       } catch (error) {
         debugBatch(
-          `Failed to process file ${i + 1}/${files.length}: ${file.originalname} - ${error.message}`
+          `[upload-service.js LINE 369]: Failed to process file ${i + 1}/${files.length}: ${file.originalname} - ${error.message}`
         );
         errors.push({
           filename: file.originalname,
@@ -376,11 +376,11 @@ class UploadService {
     }
 
     debugBatch(
-      `Batch processing completed - Success: ${allResults.length} variants, Errors: ${errors.length} files`
+      `[upload-service.js LINE 379]: Batch processing completed - Success: ${allResults.length} variants, Errors: ${errors.length} files`
     );
     
     if (errors.length > 0) {
-      debugBatch('Failed files:', errors.map(e => `${e.filename}: ${e.error}`));
+      debugBatch(`[upload-service.js LINE 383]: Failed files:`, errors.map(e => `${e.filename}: ${e.error}`));
     }
     
     return { results: allResults, errors };

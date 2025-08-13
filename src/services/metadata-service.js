@@ -4,8 +4,7 @@ const debug = require("debug");
 const debugMetadata = debug("photovault:metadata");
 const debugGps = debug("photovault:metadata:gps");
 
-console.log(debugMetadata.enabled);
-console.log(debugGps.enabled);
+
 
 /**
  * Optimized Metadata Service - Only extracts date and GPS location
@@ -46,7 +45,7 @@ class MetadataService {
       return metadata;
     } catch (error) {
       debugMetadata(
-        `LINE 46: Failed to extract metadata from ${filename}: ${error.message}`
+        `[metadata-service.js LINE 48]: Failed to extract metadata from ${filename}: ${error.message}`
       );
       return null;
     }
@@ -97,7 +96,7 @@ class MetadataService {
         return { lat, lng };
       }
     } catch (error) {
-      debugGps(`GPS parsing error: ${error.message}`);
+      debugGps(`[metadata-service.js LINE 99]: GPS parsing error: ${error.message}`);
     }
 
     return null;
@@ -160,7 +159,7 @@ class MetadataService {
         return address;
       }
     } catch (error) {
-      debugGps(`Address lookup failed: ${error.message}`);
+      debugGps(`[metadata-service.js LINE 162]: Address lookup failed: ${error.message}`);
     }
 
     return null;
@@ -173,20 +172,18 @@ class MetadataService {
     const folderName = objectName.split("/")[0];
     if (!folderName || folderName === objectName) return; // Skip root uploads
     const jsonFileName = `${folderName}/${folderName}.json`;
-    debugMetadata(`Line 172 - updateFolderMetadata ${objectName}`);
     debugMetadata(
-      `Line 173 - Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`
+      `[metadata-service.js LINE 176]: Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`
     );
 
     try {
-      debugMetadata("Starting folder metadata update process...");
 
       let folderData;
       const chunks = [];
 
       try {
         debugMetadata(
-          `Attempting to retrieve existing metadata from ${jsonFileName}...`
+          `[metadata-service.js LINE 186]: Attempting to retrieve existing metadata from ${jsonFileName}...`
         );
         const stream = await this.minioClient.getObject(
           bucketName,
@@ -195,7 +192,7 @@ class MetadataService {
         for await (const chunk of stream) chunks.push(chunk);
         const rawData = Buffer.concat(chunks).toString();
         folderData = JSON.parse(rawData);
-        debugMetadata("Parsed existing metadata successfully.");
+        debugMetadata(`[metadata-service.js LINE 195]: Parsed existing metadata successfully.`);
 
       } catch (err) {
         debugMetadata(
@@ -228,13 +225,13 @@ class MetadataService {
         jsonFileName,
         jsonContent
       );
-      debugMetadata(`Successfully saved metadata. ETag: ${minioResult.etag}`);
+      debugMetadata(`[metadata-service.js LINE 228]: Successfully saved metadata. ETag: ${minioResult.etag}`);
 
 
       return true;
     } catch (error) {
       debugMetadata(
-        `LINE 220 - Failed to update folder metadata: ${error.message}`
+        `[metadata-service.js LINE 234]: Failed to update folder metadata: ${error.message}`
       );
       return false;
     }
