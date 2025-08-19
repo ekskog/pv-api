@@ -43,10 +43,10 @@ class UploadService {
        
         // Extract metadata first
         extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
-        debugMetadata(`[upload-service.js LINE 46]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}`);
 
         // Process image file
-        await this.processImageFile(file, bucketName, folderPath, mimetype);
+        uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
+        debugMetadata(`[upload-service.js LINE 50]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}\nuploadresult: ${JSON.stringify(uploadResult)}`);
 
         // Update JSON metadata with already extracted data (non-blocking)
         if (uploadResult && extractedMetadata) {
@@ -104,7 +104,7 @@ class UploadService {
       );
 
       // Process the actual file contents returned from microservice
-      debugImage(`[upload-service.js LINE 106]: Processing file contents from microservice for ${file.originalname}`);
+      debugImage(`[upload-service.js LINE 107]: Processing file contents from microservice for ${file.originalname}`);
       const variants = this._processFileContentsFromMicroservice(
         conversionResult.data.files
       );
@@ -141,6 +141,7 @@ class UploadService {
       }
 
       debugImage(`[upload-service.js LINE 142]: Image processing completed for ${file.originalname}`);
+      debugMetadata(`[upload-service.js LINE 143]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}`);
       return uploadResult;
     } catch (error) {
       debugImage(`[upload-service.js LINE 145]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
