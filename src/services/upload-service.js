@@ -45,20 +45,25 @@ class UploadService {
         extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
 
         // Process image file
+        debugImage(`[upload-service.js LINE 48]: BEFORE AWAIT`);
         uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
+        debugImage(`[upload-service.js LINE 50]: AFTER AWAIT`);
+
         debugMetadata(`[upload-service.js LINE 50]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}\nuploadresult: ${JSON.stringify(uploadResult)}`);
 
-        // Update JSON metadata with already extracted data (non-blocking)
-        if (uploadResult && extractedMetadata) {
-          this.updateJsonMetadataAsync(
-            bucketName,
-            uploadResult,
-            extractedMetadata,
-            file.originalname
-          ).catch((error) => {
-            throw new Error (`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
-          });
-        }
+          // Update JSON metadata with already extracted data (blocking)
+          if (uploadResult && extractedMetadata) {
+            try {
+              await this.updateJsonMetadataAsync(
+                bucketName,
+                uploadResult,
+                extractedMetadata,
+                file.originalname
+              );
+            } catch (error) {
+              throw new Error(`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
+            }
+          }
 
         return uploadResult;
       }
@@ -141,7 +146,6 @@ class UploadService {
       }
 
       debugImage(`[upload-service.js LINE 142]: Image processing completed for ${file.originalname}`);
-      debugMetadata(`[upload-service.js LINE 143]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}`);
       return uploadResult;
     } catch (error) {
       debugImage(`[upload-service.js LINE 145]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
