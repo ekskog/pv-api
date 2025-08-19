@@ -31,7 +31,7 @@ class UploadService {
    * @param {Object} file - Multer file object
    * @param {string} bucketName - MinIO bucket name
    * @param {string} folderPath - Upload folder path
-   * @returns {Array} Upload results
+   * @returns {Object} Upload result
    */
   async processAndUploadFile(file, bucketName, folderPath = "") {
     let mimetype = file.mimetype;
@@ -88,15 +88,14 @@ class UploadService {
   }
 
   /**
-   * Process image files (HEIC or JPEG) - convert using microservice and upload variants
+   * Process image files (HEIC or JPEG) - convert using microservice and upload
    * @param {Object} file - Multer file object
    * @param {string} bucketName - MinIO bucket name
    * @param {string} folderPath - Upload folder path
    * @param {string} mimetype - File mimetype (e.g., 'image/heic', 'image/jpeg')
-   * @returns {Array} Upload results
+   * @returns {Object} Upload result
    */
   async processImageFile(file, bucketName, folderPath, mimetype) {
-    let uploadResult = null;
     const uploadTimer = `${mimetype}-upload-${file.originalname}`;    
     try {
       // Convert using microservice
@@ -106,42 +105,38 @@ class UploadService {
         file.mimetype
       );
 
-      // Process the actual file contents returned from microservice
-      debugImage(`[upload-service.js LINE 110]: Processing file contents from microservice for ${file.originalname}`);
-      const variants = this._processFileContentsFromMicroservice(
+      // Process the converted file from microservice
+      debugImage(`[upload-service.js LINE 110]: Processing converted file from microservice for ${file.originalname}`);
+      const convertedFile = this._processConvertedFileFromMicroservice(
         conversionResult.data.files
       );
 
-      // Upload all variants to MinIO
-      for (const [variantName, variantData] of Object.entries(variants)) {
-        const variantObjectName = folderPath
-          ? `${folderPath.replace(/\/$/, "")}/${variantData.filename}`
-          : variantData.filename;
+      // Upload the converted file to MinIO
+      const objectName = folderPath
+        ? `${folderPath.replace(/\/$/, "")}/${convertedFile.filename}`
+        : convertedFile.filename;
 
-        const uploadInfo = await this.minioClient.putObject(
-          bucketName,
-          variantObjectName,
-          variantData.buffer,
-          variantData.size,
-          {
-            "Content-Type": variantData.mimetype,
-            "X-Amz-Meta-Original-Name": file.originalname,
-            "X-Amz-Meta-Variant": variantName,
-            "X-Amz-Meta-Upload-Date": new Date().toISOString(),
-            "X-Amz-Meta-Converted-By": "avif-converter-microservice",
-          }
-        );
+      const uploadInfo = await this.minioClient.putObject(
+        bucketName,
+        objectName,
+        convertedFile.buffer,
+        convertedFile.size,
+        {
+          "Content-Type": convertedFile.mimetype,
+          "X-Amz-Meta-Original-Name": file.originalname,
+          "X-Amz-Meta-Upload-Date": new Date().toISOString(),
+          "X-Amz-Meta-Converted-By": "avif-converter-microservice",
+        }
+      );
 
-        uploadResult = {
-          originalName: file.originalname,
-          objectName: variantObjectName,
-          variant: variantName,
-          size: variantData.size,
-          mimetype: variantData.mimetype,
-          etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId,
-        };
-      }
+      const uploadResult = {
+        originalName: file.originalname,
+        objectName: objectName,
+        size: convertedFile.size,
+        mimetype: convertedFile.mimetype,
+        etag: uploadInfo.etag,
+        versionId: uploadInfo.versionId,
+      };
 
       debugImage(`[upload-service.js LINE 146]: Image processing completed for ${file.originalname}`);
       return uploadResult;
@@ -156,7 +151,7 @@ class UploadService {
    * @param {Object} file - Multer file object
    * @param {string} bucketName - MinIO bucket name
    * @param {string} folderPath - Upload folder path
-   * @returns {Array} Upload results
+   * @returns {Object} Upload result
    */
   async processVideoFile(file, bucketName, folderPath) {
     const videoTimer = `Video-upload-${file.originalname}`;
@@ -201,17 +196,15 @@ class UploadService {
 
       console.timeEnd(videoTimer);
 
-      return [
-        {
-          originalName: file.originalname,
-          objectName: objectName,
-          size: file.size,
-          mimetype: file.mimetype || "video/quicktime",
-          etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId,
-          fileType: "video",
-        },
-      ];
+      return {
+        originalName: file.originalname,
+        objectName: objectName,
+        size: file.size,
+        mimetype: file.mimetype || "video/quicktime",
+        etag: uploadInfo.etag,
+        versionId: uploadInfo.versionId,
+        fileType: "video",
+      };
     } catch (error) {
       console.timeEnd(videoTimer);
       debugVideo(
@@ -222,39 +215,42 @@ class UploadService {
   }
 
   /**
-   * STEP 4: Process actual file contents returned from microservice
+   * Process converted file from microservice (single file instead of variants)
    * @param {Array} microserviceFiles - Array of file objects with base64 content
-   * @returns {Object} Variants object suitable for MinIO upload
+   * @returns {Object} Single converted file object suitable for MinIO upload
    */
-  _processFileContentsFromMicroservice(microserviceFiles) {
-    const variants = {};
-
-    for (const fileData of microserviceFiles) {
-      try {
-        debugImage(`[upload-service.js LINE 234]: Processing variant ${fileData.variant}: ${fileData.filename}`);
-        
-        // Decode base64 content back to buffer
-        const fileBuffer = Buffer.from(fileData.content, "base64");
-
-        variants[fileData.variant] = {
-          buffer: fileBuffer,
-          filename: fileData.filename,
-          size: fileBuffer.length,
-          mimetype: fileData.mimetype || "image/avif",
-        };
-
-        debugImage(
-          `[upload-service.js LINE 247]: Processed ${fileData.variant} variant: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
-        );
-      } catch (error) {
-        debugImage(
-          `[upload-service.js LINE 251]: Failed to process file ${fileData.filename}: ${error.message}`
-        );
-      }
+  _processConvertedFileFromMicroservice(microserviceFiles) {
+    // Take the first (and presumably only) file from the microservice response
+    const fileData = microserviceFiles[0];
+    
+    if (!fileData) {
+      throw new Error("No converted file received from microservice");
     }
 
-    debugImage(`[upload-service.js LINE 256]: Successfully processed ${Object.keys(variants).length} variants`);
-    return variants;
+    try {
+      debugImage(`[upload-service.js LINE 234]: Processing converted file: ${fileData.filename}`);
+      
+      // Decode base64 content back to buffer
+      const fileBuffer = Buffer.from(fileData.content, "base64");
+
+      const convertedFile = {
+        buffer: fileBuffer,
+        filename: fileData.filename,
+        size: fileBuffer.length,
+        mimetype: fileData.mimetype || "image/avif",
+      };
+
+      debugImage(
+        `[upload-service.js LINE 247]: Processed converted file: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
+      );
+      
+      return convertedFile;
+    } catch (error) {
+      debugImage(
+        `[upload-service.js LINE 251]: Failed to process file ${fileData.filename}: ${error.message}`
+      );
+      throw error;
+    }
   }
 
   /**
@@ -288,16 +284,14 @@ class UploadService {
         `[upload-service.js LINE 288]: Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
       );
 
-      return [
-        {
-          originalName: file.originalname,
-          objectName: objectName,
-          size: file.size,
-          mimetype: file.mimetype,
-          etag: uploadInfo.etag,
-          versionId: uploadInfo.versionId,
-        },
-      ];
+      return {
+        originalName: file.originalname,
+        objectName: objectName,
+        size: file.size,
+        mimetype: file.mimetype,
+        etag: uploadInfo.etag,
+        versionId: uploadInfo.versionId,
+      };
     } catch (error) {
       console.timeEnd(uploadTimer);
       debugRegular(`[upload-service.js LINE 303]: Regular file upload failed for ${file.originalname}: ${error.message}`);
@@ -308,7 +302,7 @@ class UploadService {
   /**
    * Update JSON metadata file using already extracted EXIF data (async, non-blocking)
    * @param {string} bucketName - MinIO bucket name
-   * @param {Array} uploadResult - Upload result
+   * @param {Object} uploadResult - Upload result
    * @param {Object} extractedMetadata - Already extracted EXIF metadata
    * @param {string} originalFilename - Original filename for logging
    */
@@ -353,14 +347,14 @@ class UploadService {
       const file = files[i];
       
       try {
-        const results = await this.processAndUploadFile(
+        const result = await this.processAndUploadFile(
           file,
           bucketName,
           folderPath
         );
-        allResults.push(...results);
+        allResults.push(result);
         debugBatch(
-          `[upload-service.js LINE 363]: Successfully processed file ${i + 1}/${files.length}: ${file.originalname} (${results.length} variants)`
+          `[upload-service.js LINE 363]: Successfully processed file ${i + 1}/${files.length}: ${file.originalname}`
         );
       } catch (error) {
         debugBatch(
@@ -374,7 +368,7 @@ class UploadService {
     }
 
     debugBatch(
-      `[upload-service.js LINE 377]: Batch processing completed - Success: ${allResults.length} variants, Errors: ${errors.length} files`
+      `[upload-service.js LINE 377]: Batch processing completed - Success: ${allResults.length} files, Errors: ${errors.length} files`
     );
     
     if (errors.length > 0) {
