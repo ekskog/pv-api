@@ -44,6 +44,11 @@ const sendSSEEvent = (jobId, eventType, data) => {
   try {
     connection.write(message);
     debugSSE(`[[server.js LINE 46]: ${new Date().toISOString()}] Event ${message} sent successfully to job ${jobId}`);
+    if (eventType === "complete") {
+      connection.end();
+      sseConnections.delete(jobId);
+      debugSSE(`[server.js LINE 50]: ${new Date().toISOString()}] Connection closed for job ${jobId}`);
+    }
   } catch (error) {
     debugSSE(`[server.js LINE 48]: ${new Date().toISOString()}] Error sending to job ${jobId}: ${error.message}`);
     // Remove failed connection
@@ -157,7 +162,7 @@ app.get("/health", async (req, res) => {
       endpoint: process.env.AVIF_CONVERTER_URL,
     },
   });
-  
+
 });
 
 
@@ -562,7 +567,7 @@ async function startServer() {
       //debugServer(`> Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`);
       //debugServer(`> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`);
       //debugServer(`Auth Mode: ${authMode}`);
-      });
+    });
   } catch (error) {
     debugServer(`[server.js LINE 567]: Failed to start server:`, error.message);
     process.exit(1);
@@ -684,12 +689,12 @@ async function initializeDatabase() {
   //const authMode = process.env.AUTH_MODE;
 
   //if (authMode === "database") {
-    try {
-      await database.initialize();
-    } catch (error) {
-      debugAuth(`[server.js LINE 690]: Database initialization failed:`, error.message);
-      //process.env.AUTH_MODE = "demo";
-    }
+  try {
+    await database.initialize();
+  } catch (error) {
+    debugAuth(`[server.js LINE 690]: Database initialization failed:`, error.message);
+    //process.env.AUTH_MODE = "demo";
+  }
   /*} else {
     debugAuth("Running in demo authentication mode");
   }*/
