@@ -42,6 +42,7 @@ class MetadataService {
         metadata.hasData = true;
       }
 
+      debugMetadata(`[metadata-service.js LINE 45]: Extracted metadata for ${filename}: ${JSON.stringify(metadata)}`);
       return metadata;
     } catch (error) {
       debugMetadata(

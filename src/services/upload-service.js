@@ -43,7 +43,8 @@ class UploadService {
        
         // Extract metadata first
         extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
-        
+        debugMetadata(`[upload-service.js LINE 46]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}`);
+
         // Process image file
         await this.processImageFile(file, bucketName, folderPath, mimetype);
 

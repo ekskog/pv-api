@@ -109,7 +109,7 @@ app.get("/health", async (req, res) => {
     const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
     albumsCount = albums.length;
     minioHealthy = true;
-    debugHealth(`[server.js LINE 112]: MinIO healthy, ${albumsCount} albums`);
+    //debugHealth(`[server.js LINE 112]: MinIO healthy, ${albumsCount} albums`);
   } catch (error) {
     debugHealth(`[server.js LINE 114]: MinIO failure: ${error.message}`);
   }
@@ -130,7 +130,7 @@ app.get("/health", async (req, res) => {
 
     if (response.ok) {
       converterHealthy = true;
-      debugHealth(`[server.js LINE 133]: Converter is healthy`);
+      //debugHealth(`[server.js LINE 133]: Converter is healthy`);
     } else {
       debugHealth(`[server.js LINE 135]: Converter unhealthy: ${response.status}`);
     }
@@ -143,7 +143,7 @@ app.get("/health", async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  debugHealth(`[server.js LINE 146]: Responding with ${status} (${code})`);
+  //debugHealth(`[server.js LINE 146]: Responding with ${status} (${code})`);
   res.status(code).json({
     status,
     timestamp: new Date().toISOString(),
