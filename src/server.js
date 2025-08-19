@@ -1,365 +1,610 @@
+// force rebuild on 11/08 13:38
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
 const debug = require("debug");
-const AvifConverterService = require("./avif-converter-service");
-const MetadataService = require("./metadata-service");
+const { Client } = require("minio");
+const { v4: uuidv4 } = require("uuid");
+
+// Import authentication components
+const database = require("./config/database");
+const authRoutes = require("./routes/auth");
+const userRoutes = require("./routes/user");
+
+const { authenticateToken, requireRole } = require("./middleware/authMW");
 
 // Debug namespaces
+const debugServer = debug("photovault:server");
+const debugSSE = debug("photovault:sse");
+const debugHealth = debug("photovault:health");
 const debugUpload = debug("photovault:upload");
-const debugImage = debug("photovault:upload:image");
-const debugVideo = debug("photovault:upload:video");
-const debugBatch = debug("photovault:upload:batch");
-const debugMetadata = debug("photovault:upload:metadata");
-const debugMemory = debug("photovault:upload:memory");
-const debugRegular = debug("photovault:upload:regular");
+const debugMinio = debug("photovault:minio");
+const debugAuth = debug("photovault:auth");
+const debugAlbum = debug("photovault:album");
 
-// Upload Service - Handles file uploads with AVIF conversion (NO FALLBACKS)
-//
-// IMPORTANT: This service enforces strict AVIF conversion requirements:
-// - Only successfully converted AVIF files are uploaded to MinIO
-// - If AVIF conversion fails, the original file is NOT uploaded
-// - Upload failures are properly propagated to the client
-// - No fallback mechanisms are implemented by design
+// Store active SSE connections by job ID
+const sseConnections = new Map();
 
-class UploadService {
-  constructor(minioClient) {
-    this.minioClient = minioClient;
-    this.avifConverter = new AvifConverterService();
-    this.metadataService = new MetadataService(minioClient);
+const sendSSEEvent = (jobId, eventType, data) => {
+  const connection = sseConnections.get(jobId);
+  if (!connection) {
+    debugSSE(`[[server.js LINE 32]: ${new Date().toISOString()}] No connection found for job ${jobId}`);
+    return;
   }
 
-  /**
-   * Process and upload a single file
-   * @param {Object} file - Multer file object
-   * @param {string} bucketName - MinIO bucket name
-   * @param {string} folderPath - Upload folder path
-   * @returns {Object} Upload result (single object)
-   */
-  async processAndUploadFile(file, bucketName, folderPath = "") {
-    let mimetype = file.mimetype;
-    let extractedMetadata = null;
-    let uploadResult = null;
+  const eventData = {
+    type: eventType,
+    timestamp: new Date().toISOString(),
+    ...data,
+  };
 
-    try {
-      if (mimetype === "image/heic" || mimetype === "image/jpeg") {
-       
-        // Extract metadata first
-        extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
+  const message = `data: ${JSON.stringify(eventData)}\n\n`;
 
-        // Process image file
-        uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-        debugMetadata(`[upload-service.js LINE 49]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}\nuploadresult: ${JSON.stringify(uploadResult)}`);
-
-          // Update JSON metadata with already extracted data (blocking)
-          if (uploadResult && extractedMetadata) {
-            try {
-              await this.updateJsonMetadataAsync(
-                bucketName,
-                uploadResult,
-                extractedMetadata,
-                file.originalname
-              );
-              debugMetadata(`[upload-service.js LINE 60]: Updated JSON metadata for ${file.originalname}`);
-            } catch (error) {
-              throw new Error(`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
-            }
-          }
-
-        return uploadResult;
-      }
-    } catch (error) {
-      // NO FALLBACK - If AVIF conversion fails, fail the entire upload
-      debugUpload(`[upload-service.js LINE 70]: AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
-      throw error;
-    } finally {
-      // Force garbage collection if available
-      if (global.gc) {
-        global.gc();
-        const memAfterGC = process.memoryUsage();
-        debugMemory(
-          `[upload-service.js LINE 78]: Memory after GC: ${(
-            memAfterGC.heapUsed /
-            1024 /
-            1024
-          ).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(
-            2
-          )}MB RSS`
-        );
-      }
+  try {
+    connection.write(message);
+    debugSSE(`[[server.js LINE 46]: ${new Date().toISOString()}] Event ${message} sent successfully to job ${jobId}`);
+    if (eventType === "complete") {
+      connection.end();
+      sseConnections.delete(jobId);
+      debugSSE(`[server.js LINE 50]: ${new Date().toISOString()}] Connection closed for job ${jobId}`);
     }
+  } catch (error) {
+    debugSSE(`[server.js LINE 48]: ${new Date().toISOString()}] Error sending to job ${jobId}: ${error.message}`);
+    // Remove failed connection
+    sseConnections.delete(jobId);
+  }
+};
+
+// Import services
+const UploadService = require("./services/upload-service");
+
+const app = express();
+const PORT = process.env.PORT;
+
+// CORS Configuration - Allow frontend domain
+const corsOptions = {
+  origin: [
+    "https://photos.hbvu.su",
+    "http://localhost:5173", // For development
+    "http://localhost:3000", // Alternative dev port
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
+};
+
+// MinIO Client Configuration
+const minioClient = new Client({
+  endPoint: process.env.MINIO_ENDPOINT, // now using mino outside the cluster
+  port: parseInt(process.env.MINIO_PORT),
+  useSSL: process.env.MINIO_USE_SSL === "true",
+  accessKey: process.env.MINIO_ACCESS_KEY,
+  secretKey: process.env.MINIO_SECRET_KEY,
+});
+
+// Configure multer for file uploads (store in memory)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024, // 2GB limit for large video files from iPhone
+  },
+});
+
+// Middleware
+app.use(cors(corsOptions));
+app.use(express.json({ limit: "2gb" })); // Increased for video uploads
+app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
+app.use("/auth", authRoutes);
+app.use("/user", userRoutes);
+
+// Initialize Services
+const uploadService = new UploadService(minioClient);
+
+// Health check route
+app.get("/health", async (req, res) => {
+  debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
+
+  let minioHealthy = false;
+  let converterHealthy = false;
+  let albumsCount = 0;
+
+  // MinIO check
+  try {
+    const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
+    albumsCount = albums.length;
+    minioHealthy = true;
+    //debugHealth(`[server.js LINE 112]: MinIO healthy, ${albumsCount} albums`);
+  } catch (error) {
+    debugHealth(`[server.js LINE 114]: MinIO failure: ${error.message}`);
   }
 
-  /**
-   * Process image files (HEIC or JPEG) - convert using microservice and upload
-   * @param {Object} file - Multer file object
-   * @param {string} bucketName - MinIO bucket name
-   * @param {string} folderPath - Upload folder path
-   * @param {string} mimetype - File mimetype (e.g., 'image/heic', 'image/jpeg')
-   * @returns {Object} Upload result (single object)
-   */
-  async processImageFile(file, bucketName, folderPath, mimetype) {
-    const uploadTimer = `${mimetype}-upload-${file.originalname}`;    
-    try {
-      // Convert using microservice
-      const conversionResult = await this.avifConverter.convertImage(
-        file.buffer,
-        file.originalname,
-        file.mimetype
-      );
+  // Converter check
+  try {
+    const converterUrl = process.env.AVIF_CONVERTER_URL;
+    const timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT, 10);
 
-      // Process the converted file from microservice
-      debugImage(`[upload-service.js LINE 110]: Processing converted file from microservice for ${file.originalname}`);
-      const convertedFile = this._processConvertedFileFromMicroservice(
-        conversionResult.data.files
-      );
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
 
-      // Upload the converted file to MinIO
-      const objectName = folderPath
-        ? `${folderPath.replace(/\/$/, "")}/${convertedFile.filename}`
-        : convertedFile.filename;
+    const response = await fetch(`${converterUrl}/health`, {
+      signal: controller.signal,
+    });
 
-      const uploadInfo = await this.minioClient.putObject(
-        bucketName,
-        objectName,
-        convertedFile.buffer,
-        convertedFile.size,
-        {
-          "Content-Type": convertedFile.mimetype,
-          "X-Amz-Meta-Original-Name": file.originalname,
-          "X-Amz-Meta-Upload-Date": new Date().toISOString(),
-          "X-Amz-Meta-Converted-By": "avif-converter-microservice",
-        }
-      );
+    clearTimeout(timer);
 
-      const uploadResult = {
-        originalName: file.originalname,
-        objectName: objectName,
-        size: convertedFile.size,
-        mimetype: convertedFile.mimetype,
-        etag: uploadInfo.etag,
-        versionId: uploadInfo.versionId,
-      };
-
-      debugImage(`[upload-service.js LINE 146]: Image processing completed for ${file.originalname}`);
-      return uploadResult;
-    } catch (error) {
-      debugImage(`[upload-service.js LINE 149]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
-      throw error;
+    if (response.ok) {
+      converterHealthy = true;
+      //debugHealth(`[server.js LINE 133]: Converter is healthy`);
+    } else {
+      debugHealth(`[server.js LINE 135]: Converter unhealthy: ${response.status}`);
     }
+  } catch (error) {
+    debugHealth(`[server.js LINE 138]: Converter failure: ${error.message}`);
   }
 
-  /**
-   * Process video file - upload directly to MinIO without conversion
-   * @param {Object} file - Multer file object
-   * @param {string} bucketName - MinIO bucket name
-   * @param {string} folderPath - Upload folder path
-   * @returns {Object} Upload result (single object)
-   */
-  async processVideoFile(file, bucketName, folderPath) {
-    const videoTimer = `Video-upload-${file.originalname}`;
-    console.time(videoTimer);
-    
-    // Check file size limit for videos (larger than images)
-    const maxSizeMB = 2000; // 2GB limit for videos
-    const fileSizeMB = file.size / 1024 / 1024;
-    if (fileSizeMB > maxSizeMB) {
-      debugVideo(
-        `[upload-service.js LINE 170]: Video file too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`
-      );
-      throw new Error(
-        `Video file too large: ${fileSizeMB.toFixed(
-          2
-        )}MB. Maximum allowed: ${maxSizeMB}MB`
-      );
-    }
+  // Compose response
+  const isHealthy = minioHealthy && converterHealthy;
+  const status = isHealthy ? "healthy" : "degraded";
+  const code = isHealthy ? 200 : 503;
 
-    try {
-      // Create object name with video prefix for organization
-      const objectName = folderPath
-        ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
-        : file.originalname;
+  //debugHealth(`[server.js LINE 146]: Responding with ${status} (${code})`);
+  res.status(code).json({
+    status,
+    timestamp: new Date().toISOString(),
+    minio: {
+      connected: minioHealthy,
+      albums: albumsCount,
+      endpoint: process.env.MINIO_ENDPOINT,
+    },
+    converter: {
+      connected: converterHealthy,
+      endpoint: process.env.AVIF_CONVERTER_URL,
+    },
+  });
 
-      debugVideo(`[upload-service.js LINE 185]: Uploading video to MinIO: ${objectName}`);
+});
 
-      // Upload directly to MinIO with video-specific metadata
-      const uploadInfo = await this.minioClient.putObject(
-        bucketName,
-        objectName,
-        file.buffer,
-        file.size,
-        {
-          "Content-Type": file.mimetype || "video/quicktime", // Default to MOV if no mimetype
-          "X-Amz-Meta-Original-Name": file.originalname,
-          "X-Amz-Meta-Upload-Date": new Date().toISOString(),
-          "X-Amz-Meta-File-Type": "video",
-          "X-Amz-Meta-Source": "iPhone", // Assuming iPhone source based on user request
-        }
-      );
 
-      console.timeEnd(videoTimer);
+// SSE endpoint - make sure this exists in your server
+app.get("/processing-status/:jobId", (req, res) => {
+  const jobId = req.params.jobId;
+  debugSSE(`[[server.js LINE 167]: ${new Date().toISOString()}] Client connecting for job ${jobId}`);
 
-      return {
-        originalName: file.originalname,
-        objectName: objectName,
-        size: file.size,
-        mimetype: file.mimetype || "video/quicktime",
-        etag: uploadInfo.etag,
-        versionId: uploadInfo.versionId,
-        fileType: "video",
-      };
-    } catch (error) {
-      console.timeEnd(videoTimer);
-      debugVideo(
-        `Video upload failed for ${file.originalname}: ${error.message}`
-      );
-      throw error;
-    }
-  }
+  // Set SSE headers
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Cache-Control",
+  });
 
-  /**
-   * Process converted file from microservice (single file instead of variants)
-   * @param {Array} microserviceFiles - Array of file objects with base64 content
-   * @returns {Object} Single converted file object suitable for MinIO upload
-   */
-  _processConvertedFileFromMicroservice(microserviceFiles) {
-    // Take the first (and presumably only) file from the microservice response
-    const fileData = microserviceFiles[0];
-    
-    if (!fileData) {
-      throw new Error("No converted file received from microservice");
-    }
+  // Store connection
+  sseConnections.set(jobId, res);
+  debugSSE(`[server.js LINE 180]: ${new Date().toISOString()}] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
 
-    try {
-      debugImage(`[upload-service.js LINE 234]: Processing converted file: ${fileData.filename}`);
-      
-      // Decode base64 content back to buffer
-      const fileBuffer = Buffer.from(fileData.content, "base64");
+  // Send initial connection confirmation
+  const confirmationData = JSON.stringify({
+    type: "connected",
+    jobId,
+    message: "SSE connection established",
+  });
 
-      const convertedFile = {
-        buffer: fileBuffer,
-        filename: fileData.filename,
-        size: fileBuffer.length,
-        mimetype: fileData.mimetype || "image/avif",
-      };
+  res.write(`data: ${confirmationData}\n\n`);
+  debugSSE(`[[server.js LINE 190]: ${new Date().toISOString()}] Sent ${confirmationData} for job ${jobId}`);
 
-      debugImage(
-        `[upload-service.js LINE 247]: Processed converted file: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
-      );
-      
-      return convertedFile;
-    } catch (error) {
-      debugImage(
-        `[upload-service.js LINE 251]: Failed to process file ${fileData.filename}: ${error.message}`
-      );
-      throw error;
-    }
-  }
+  // Handle client disconnect
+  req.on("close", () => {
+    debugSSE(`[server.js LINE 194]: ${new Date().toISOString()}] Client disconnected for job ${jobId}`);
+    sseConnections.delete(jobId);
+  });
 
-  /**
-   * Upload regular (non-HEIC) file
-   */
-  async uploadRegularFile(file, bucketName, folderPath) {
-    const uploadTimer = `Regular-upload-${file.originalname}`;
-    console.time(uploadTimer);
-    
-     const objectName = folderPath
-      ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
-      : file.originalname;
+  req.on("error", (error) => {
+    sseConnections.delete(jobId);
+  });
+});
 
-    debugRegular(`[upload-service.js LINE 267]: Target object name: "${objectName}"`);
+// GET /albums - List all albums (public access for album browsing)
+app.get("/albums", async (req, res) => {
+  try {
+    const folderSet = new Set();
 
-    try {
-      const uploadInfo = await this.minioClient.putObject(
-        bucketName,
-        objectName,
-        file.buffer,
-        file.size,
-        {
-          "Content-Type": file.mimetype,
-          "X-Amz-Meta-Original-Name": file.originalname,
-          "X-Amz-Meta-Upload-Date": new Date().toISOString(),
-        }
-      );
-      
-      console.timeEnd(uploadTimer);
-      debugRegular(
-        `[upload-service.js LINE 288]: Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
-      );
-
-      return {
-        originalName: file.originalname,
-        objectName: objectName,
-        size: file.size,
-        mimetype: file.mimetype,
-        etag: uploadInfo.etag,
-        versionId: uploadInfo.versionId,
-      };
-    } catch (error) {
-      console.timeEnd(uploadTimer);
-      debugRegular(`[upload-service.js LINE 303]: Regular file upload failed for ${file.originalname}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Update JSON metadata file using already extracted EXIF data (async, non-blocking)
-   * @param {string} bucketName - MinIO bucket name
-   * @param {Object} uploadResult - Upload result
-   * @param {Object} extractedMetadata - Already extracted EXIF metadata
-   * @param {string} originalFilename - Original filename for logging
-   */
-  async updateJsonMetadataAsync(
-    bucketName,
-    uploadResult,
-    extractedMetadata,
-    originalFilename
-  ) {
-    
-    
-    try {
-      // Use the metadata service to update the JSON file with extracted data
-      await this.metadataService.updateFolderMetadata(
-        bucketName,
-        uploadResult.objectName,
-        extractedMetadata,
-        uploadResult
-      );
-
-      debugMetadata(
-        `[upload-service.js LINE 333]: Successfully updated JSON metadata for ${uploadResult.objectName}`
-      );
-    } catch (error) {
-      throw new Error(
-        ` LINE 337 - Failed to update JSON metadata for ${uploadResult.objectName}: ${error.message}`
-      );
-    }
-  }
-
-  /**
-   * Process multiple files in batch
-   */
-  async processMultipleFiles(files, bucketName, folderPath = "") {
-    debugBatch(
-      `[upload-service.js LINE 347]: Starting batch processing of ${files.length} files`
+    const objectsStream = minioClient.listObjectsV2(
+      process.env.MINIO_BUCKET_NAME,
+      "",
+      true
     );
-    const allResults = [];
+
+    objectsStream.on("data", (obj) => {
+      const key = obj.name;
+      const topLevelPrefix = key.split("/")[0];
+      if (key.includes("/")) {
+        folderSet.add(topLevelPrefix);
+      }
+    });
+
+    objectsStream.on("end", () => {
+      debugMinio(`[server.js LINE 223]: Number of top-level folders: ${folderSet.size}`);
+      debugMinio(`[server.js LINE 224]: ${JSON.stringify([...folderSet], null, 2)}`);
+    });
+
+    objectsStream.on("error", (err) => {
+      debugMinio(`[server.js LINE 228]: Error listing objects: ${err}`);
+    });
+    res.json({
+      success: true,
+      data: [...folderSet],
+      message: "Albums retrieved successfully",
+      count: folderSet.size,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// List objects in a bucket (Admin only)
+app.get("/buckets/:bucketName/objects", async (req, res) => {
+  //debugMinio(`Request received for bucket: ${req.params.bucketName}, prefix: ${req.query.prefix}}`);
+  try {
+    const { bucketName } = req.params;
+    const { prefix = "" } = req.query;
+
+    // Check if bucket exists
+    const bucketExists = await minioClient.bucketExists(bucketName);
+    if (!bucketExists) {
+      return res.status(404).json({
+        success: false,
+        error: "Bucket not found",
+      });
+    }
+
+    const objects = [];
+    const folders = [];
+
+    let stream;
+
+    // Non-recursive listing - show folder structure
+    stream = minioClient.listObjectsV2(bucketName, prefix, false, "/");
+
+    for await (const obj of stream) {
+      if (obj.prefix) {
+        // This is a folder/prefix
+        folders.push({
+          name: obj.prefix,
+          type: "folder",
+        });
+      } else {
+        // Skip metadata JSON files from the listing
+        if (obj.name.endsWith(".json") && obj.name.includes("/")) {
+          const pathParts = obj.name.split("/");
+          const fileName = pathParts[pathParts.length - 1];
+          const folderName = pathParts[pathParts.length - 2];
+          if (fileName === `${folderName}.json`) {
+            continue;
+          }
+        }
+
+        // This is a file/object
+        objects.push({
+          name: obj.name,
+          size: obj.size,
+          lastModified: obj.lastModified,
+          etag: obj.etag,
+          type: "file",
+        });
+      }
+    }
+
+    const responseData = {
+      success: true,
+      data: {
+        bucket: bucketName,
+        prefix: prefix || "/",
+        folders: folders,
+        objects: objects,
+        totalFolders: folders.length,
+        totalObjects: objects.length,
+      },
+    };
+
+    res.json(responseData);
+  } catch (error) {
+    debugMinio("[server.js LINE 311]: Error in GET /buckets/:bucketName/objects:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// POST /buckets/:bucketName/folders - Create a folder (Admin only)
+app.post(
+  "/buckets/:bucketName/folders",
+  authenticateToken,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const { bucketName } = req.params;
+      const { folderPath } = req.body;
+
+      // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
+      let cleanPath = folderPath.trim();
+      cleanPath = cleanPath.replace(/^\/+/, ""); // Remove leading slashes
+      cleanPath = cleanPath.replace(/\/+$/, ""); // Remove trailing slashes
+      cleanPath = cleanPath.replace(/\/+/g, "/"); // Replace multiple slashes with single slash
+
+      if (!cleanPath) {
+        debugAlbum(`[server.js LINE 336]: ERROR: Invalid folder path after cleaning`);
+        return res.status(400).json({
+          success: false,
+          error: "Invalid folder path",
+        });
+      }
+
+      const normalizedPath = `${cleanPath}/`;
+      debugAlbum(`[server.js LINE 344]: Final normalized path: "${normalizedPath}"`);
+
+      const existingObjects = [];
+      const stream = minioClient.listObjectsV2(
+        bucketName,
+        normalizedPath,
+        false
+      );
+
+      for await (const obj of stream) {
+        existingObjects.push(obj);
+        break; // We only need to check if any object exists with this prefix
+      }
+
+      if (existingObjects.length > 0) {
+        debugAlbum(`[server.js LINE 359]: ERROR: Folder already exists (${existingObjects.length} objects found)`);
+        return res.status(409).json({
+          success: false,
+          error: "Folder already exists",
+        });
+      }
+
+      // Instead of creating an empty folder marker, create a metadata JSON file
+      // This serves as both the folder marker and metadata storage
+      const metadataPath = `${normalizedPath}${cleanPath}.json`;
+
+      const initialMetadata = {
+        album: {
+          name: cleanPath,
+          created: new Date().toISOString(),
+          description: "",
+          totalObjects: 0,
+          totalSize: 0,
+          lastModified: new Date().toISOString(),
+        },
+        media: [],
+      };
+
+      const metadataContent = Buffer.from(
+        JSON.stringify(initialMetadata, null, 2)
+      );
+
+      await minioClient.putObject(
+        bucketName,
+        metadataPath,
+        metadataContent,
+        metadataContent.length,
+        {
+          "Content-Type": "application/json",
+          "X-Amz-Meta-Type": "album-metadata",
+        }
+      );
+
+      res.status(201).json({
+        success: true,
+        message: `Folder '${cleanPath}' created successfully`,
+        data: {
+          bucket: bucketName,
+          folderPath: normalizedPath,
+          folderName: cleanPath,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+);
+
+// POST /buckets/:bucketName/upload - Upload file(s) to a bucket
+app.post(
+  "/buckets/:bucketName/upload",
+  authenticateToken,
+  upload.array("files"),
+  async (req, res) => {
+    const startTime = Date.now();
+    const jobId = uuidv4(); // Generate unique job ID for this upload
+
+    try {
+      const { bucketName } = req.params;
+      const { folderPath = "" } = req.body;
+      const files = req.files;
+
+      debugUpload(`[server.js LINE 429]: Upload request received:`, {
+        jobId,
+        bucket: bucketName,
+        folder: folderPath,
+        filesCount: files ? files.length : 0,
+        user: req.user?.username || "unknown",
+        timestamp: new Date().toISOString(),
+      });
+
+      if (!files || files.length === 0) {
+        debugUpload(`[server.js LINE 439]: Upload failed: No files provided`);
+        return res.status(400).json({
+          success: false,
+          error: "No files provided",
+        });
+      }
+
+      const response = {
+        success: true,
+        message: "Files received successfully and are being processed",
+        data: {
+          bucket: bucketName,
+          folderPath: folderPath || "/",
+          filesReceived: files.length,
+          status: "processing",
+          jobId: jobId, // Return the job ID to the client
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      res.status(200).json(response);
+      processFilesInBackground(files, bucketName, folderPath, startTime, jobId);
+    } catch (error) {
+      const errorTime = Date.now() - startTime;
+      debugUpload(`[server.js LINE 463]: Upload error occurred after ${errorTime}ms:`, {
+        error: error.message,
+        stack: error.stack,
+      });
+
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+);
+
+// GET /buckets/:bucketName/download - Get/download a specific object (Public access for images)
+app.get("/buckets/:bucketName/download", async (req, res) => {
+  try {
+    const { bucketName } = req.params;
+    const { object } = req.query;
+
+    if (!object) {
+      return res.status(400).json({
+        success: false,
+        error: "Object name is required",
+      });
+    }
+
+    // Stream the object directly to the response
+    const objectStream = await minioClient.getObject(bucketName, object);
+    // Retrieve object metadata
+    const objectStat = await minioClient.statObject(bucketName, object);
+    // Set appropriate headers
+    res.setHeader(
+      "Content-Type",
+      objectStat.metaData["content-type"] || "application/octet-stream"
+    );
+    res.setHeader("Content-Length", objectStat.size);
+    res.setHeader("Last-Modified", objectStat.lastModified);
+    res.setHeader("ETag", objectStat.etag);
+
+    // Optional: Set Content-Disposition to download file with original name
+    const filename = object.split("/").pop();
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+
+    // Pipe the object stream to response
+    objectStream.pipe(res);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// DELETE /buckets/:bucketName/upload - Delete objects(s) from a bucket
+app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) => {
+  const { bucketName } = req.params;
+  const { objectName } = req.body; // Example: "TEST/01.avif"
+
+  try {
+    await minioClient.removeObject(bucketName, objectName);
+
+    debugUpload(`[server.js LINE 524]: Deleted object:`, {
+      bucket: bucketName,
+      object: objectName,
+      user: req.user?.username || "unknown",
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Object ${objectName} deleted from ${bucketName}`,
+    });
+  } catch (error) {
+    debugUpload(`[server.js LINE 536]: Delete error:`, error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete object. " + error.message,
+    });
+  }
+});
+
+
+// Start server with database initialization
+async function startServer() {
+  try {
+    // Initialize database connection
+    let connectionPool = await initializeDatabase();
+
+    debugServer(`[server.js LINE 551]: Database initialized successfully`);
+    // Start HTTP server
+    app.listen(PORT, () => {
+      //const authMode = process.env.AUTH_MODE ;
+      //const k8sService = process.env.K8S_SERVICE_NAME || "photovault-api-service";
+      //const k8sNamespace = process.env.K8S_NAMESPACE || "photovault";
+      //const publicUrl = process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
+      //debugServer(`Starting PhotoVault ${new Date()}...`);
+      //debugServer(`> PhotoVault API server running on port ${PORT}`);
+      //debugServer(`> Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`);
+      //debugServer(`Health check (public): ${publicUrl}/health`);
+      //debugServer(`> Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`);
+      //debugServer(`> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`);
+      //debugServer(`Auth Mode: ${authMode}`);
+    });
+  } catch (error) {
+    debugServer(`[server.js LINE 567]: Failed to start server:`, error.message);
+    process.exit(1);
+  }
+}
+
+// Background processing function for asynchronous uploads
+// Add detailed logging for background processing
+// Background processing function for asynchronous uploads with SSE updates
+async function processFilesInBackground(
+  files,
+  bucketName,
+  folderPath,
+  startTime,
+  jobId
+) {
+  try {
+    const uploadResults = [];
     const errors = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      
+
       try {
-        const result = await this.processAndUploadFile(
+        debugUpload(`[server.js LINE 590]: Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
+
+        // Process the individual file
+        const result = await uploadService.processAndUploadFile(
           file,
           bucketName,
           folderPath
         );
-        allResults.push(result);
-        debugBatch(
-          `[upload-service.js LINE 363]: Successfully processed file ${i + 1}/${files.length}: ${file.originalname}`
-        );
+        uploadResults.push(result);
+
+        debugUpload(`[server.js LINE 600]: Successfully processed: ${file.originalname}`);
       } catch (error) {
-        debugBatch(
-          `[upload-service.js LINE 367]: Failed to process file ${i + 1}/${files.length}: ${file.originalname} - ${error.message}`
-        );
+        debugUpload(`[server.js LINE 602]: Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -367,16 +612,118 @@ class UploadService {
       }
     }
 
-    debugBatch(
-      `[upload-service.js LINE 377]: Batch processing completed - Success: ${allResults.length} files, Errors: ${errors.length} files`
-    );
-    
-    if (errors.length > 0) {
-      debugBatch(`[upload-service.js LINE 381]: Failed files:`, errors.map(e => `${e.filename}: ${e.error}`));
+    const processingTime = Date.now() - startTime;
+    debugUpload(`[server.js LINE 611]: Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
+
+    // Send single completion message
+    if (errors.length === 0) {
+      sendSSEEvent(jobId, "complete", {
+        status: "success",
+        message: `All ${files.length} files processed successfully!`,
+        results: {
+          uploaded: uploadResults.length,
+          failed: 0,
+          processingTime: processingTime,
+        },
+      });
+    } else if (uploadResults.length === 0) {
+      sendSSEEvent(jobId, "complete", {
+        status: "failed",
+        message: `All files failed to process. Please check the files and try again.`,
+        results: {
+          uploaded: 0,
+          failed: errors.length,
+          processingTime: processingTime,
+        },
+        errors: errors,
+      });
+    } else {
+      sendSSEEvent(jobId, "complete", {
+        status: "partial",
+        message: `${uploadResults.length} files processed successfully, ${errors.length} failed.`,
+        results: {
+          uploaded: uploadResults.length,
+          failed: errors.length,
+          processingTime: processingTime,
+        },
+        errors: errors,
+      });
     }
-    
-    return { results: allResults, errors };
+
+    // Clean up SSE connections after 30 seconds
+    setTimeout(() => {
+      debugUpload(`[server.js LINE 650]: Cleaning up SSE connections for job ${jobId}`);
+      sseConnections.delete(jobId);
+    }, 300000);
+  } catch (error) {
+    const errorTime = Date.now() - startTime;
+    debugUpload(`[server.js LINE 655]: Background processing error after ${errorTime}ms:`, {
+      error: error.message,
+      stack: error.stack,
+    });
+
+    // Send error completion message
+    sendSSEEvent(jobId, "complete", {
+      status: "failed",
+      message: `Processing failed: ${error.message}`,
+      error: error.message,
+    });
+
+    // Clean up connections
+    setTimeout(() => {
+      sseConnections.delete(jobId);
+    }, 30000);
   }
 }
 
-module.exports = UploadService;
+// Graceful shutdown
+process.on("SIGINT", async () => {
+  debugServer(`[server.js LINE 676]: Shutting down server...`);
+  if (process.env.AUTH_MODE === "database") {
+    await database.close();
+  }
+  process.exit(0);
+});
+
+async function initializeDatabase() {
+  //const authMode = process.env.AUTH_MODE;
+
+  //if (authMode === "database") {
+  try {
+    await database.initialize();
+  } catch (error) {
+    debugAuth(`[server.js LINE 690]: Database initialization failed:`, error.message);
+    //process.env.AUTH_MODE = "demo";
+  }
+  /*} else {
+    debugAuth("Running in demo authentication mode");
+  }*/
+}
+
+async function countAlbums(bucketName) {
+  return new Promise((resolve, reject) => {
+    const folderSet = new Set();
+
+    const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
+
+    objectsStream.on("data", (obj) => {
+      const key = obj.name;
+      const topLevelPrefix = key.split("/")[0];
+      if (key.includes("/")) {
+        folderSet.add(topLevelPrefix);
+      }
+    });
+
+    objectsStream.on("end", () => {
+      const albums = [...folderSet];
+      resolve(albums);
+    });
+
+    objectsStream.on("error", (err) => {
+      debugMinio(`[server.js LINE 718]: Error listing objects:`, err);
+      reject(err);
+    });
+  });
+}
+// Start the server
+startServer();

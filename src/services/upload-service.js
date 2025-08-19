@@ -31,7 +31,7 @@ class UploadService {
    * @param {Object} file - Multer file object
    * @param {string} bucketName - MinIO bucket name
    * @param {string} folderPath - Upload folder path
-   * @returns {Object} Upload result
+   * @returns {Object} Upload result (single object)
    */
   async processAndUploadFile(file, bucketName, folderPath = "") {
     let mimetype = file.mimetype;
@@ -93,7 +93,7 @@ class UploadService {
    * @param {string} bucketName - MinIO bucket name
    * @param {string} folderPath - Upload folder path
    * @param {string} mimetype - File mimetype (e.g., 'image/heic', 'image/jpeg')
-   * @returns {Object} Upload result
+   * @returns {Object} Upload result (single object)
    */
   async processImageFile(file, bucketName, folderPath, mimetype) {
     const uploadTimer = `${mimetype}-upload-${file.originalname}`;    
@@ -151,7 +151,7 @@ class UploadService {
    * @param {Object} file - Multer file object
    * @param {string} bucketName - MinIO bucket name
    * @param {string} folderPath - Upload folder path
-   * @returns {Object} Upload result
+   * @returns {Object} Upload result (single object)
    */
   async processVideoFile(file, bucketName, folderPath) {
     const videoTimer = `Video-upload-${file.originalname}`;
