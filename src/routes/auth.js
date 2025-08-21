@@ -7,6 +7,7 @@ const database = require('../config/database');
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
+  console.log('Login request received:', req.body)
   try {
     const { username, password } = req.body
 
@@ -199,6 +200,7 @@ router.put('/auth/users/:id/password', authenticateToken, requireRole('admin'), 
 
 // GET /auth/users - Get all users
 router.get('/users', authenticateToken, requireRole('admin'), async (req, res) => {
+  console.log('user list requested by admin');
   try {
     console.log('Fetching all users...');
     const connection = await database.getConnection().getConnection();
