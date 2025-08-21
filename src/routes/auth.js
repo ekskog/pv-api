@@ -200,9 +200,13 @@ router.put('/auth/users/:id/password', authenticateToken, requireRole('admin'), 
 // GET /auth/users - Get all users
 router.get('/users', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
+    console.log('Fetching all users...');
     const connection = await database.getConnection().getConnection();
+    console.log('Database connection established.');
     const [users] = await connection.execute('SELECT id, username, email, role, isActive FROM users');
+    console.log('Users retrieved:', users);
     connection.release();
+    console.log('Database connection released.');
 
     res.json({
       success: true,
