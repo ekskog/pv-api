@@ -1,4 +1,3 @@
-
 // Authentication routes
 const express = require('express')
 const { AuthService, authenticateToken, requireRole } = require('../middleware/authMW')
@@ -197,4 +196,25 @@ router.put('/auth/users/:id/password', authenticateToken, requireRole('admin'), 
     res.status(500).json({ success: false, error: 'Failed to reset password' });
   }
 });
+
+// GET /auth/users - Get all users
+router.get('/users', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const connection = await database.getConnection().getConnection();
+    const [users] = await connection.execute('SELECT id, username, email, role, isActive FROM users');
+    connection.release();
+
+    res.json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    console.error('Get users error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve users'
+    });
+  }
+});
+
 module.exports = router;
