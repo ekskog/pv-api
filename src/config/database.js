@@ -13,7 +13,6 @@ class Database {
     if (this.isInitialized) return;
 
     try {
-      // Database connection configuration
       const dbConfig = {
         host: process.env.DB_HOST || "mariadb.data.svc.cluster.local",
         port: process.env.DB_PORT || 3306,
@@ -23,20 +22,24 @@ class Database {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        connectTimeout: 60000, // Use this instead of acquireTimeout
+        connectTimeout: 60000,
       };
 
       this.pool = mysql.createPool(dbConfig);
 
-      // Test connection
       const connection = await this.pool.getConnection();
       await connection.ping();
       connection.release();
 
       this.isInitialized = true;
 
-      // Initialize default users if they don't exist
-      await this.initializeDefaultUsers();
+      // Check if users exist before initializing defaults
+      const users = await this.getAllUsers();
+      if (users.length === 0) {
+        await this.initializeDefaultUsers();
+      } else {
+        console.log(`${users.length} users already exist.`);
+      }
 
       return connection;
     } catch (error) {
@@ -75,40 +78,39 @@ class Database {
   }
 
   // Create user if not exists
-async createUserIfNotExists({ username, email, password, role }) {
-  const connection = await this.pool.getConnection();
-  try {
-    // Check if user exists
-    const [existing] = await connection.execute(
-      "SELECT id FROM users WHERE username = ? OR email = ?",
-      [username, email]
-    );
+  async createUserIfNotExists({ username, email, password, role }) {
+    const connection = await this.pool.getConnection();
+    try {
+      // Check if user exists
+      const [existing] = await connection.execute(
+        "SELECT id FROM users WHERE username = ? OR email = ?",
+        [username, email]
+      );
 
-    if (existing.length > 0) {
-      throw new Error("User already exists");
+      if (existing.length > 0) {
+        throw new Error("User already exists");
+      }
+
+      // Hash password
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      // Create user
+      const [result] = await connection.execute(
+        "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+        [username, email, passwordHash, role]
+      );
+
+      // Return user data with the new ID
+      return {
+        id: result.insertId,
+        username,
+        email,
+        role,
+      };
+    } finally {
+      connection.release();
     }
-
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    // Create user
-    const [result] = await connection.execute(
-      "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
-      [username, email, passwordHash, role]
-    );
-    
-   
-    // Return user data with the new ID
-    return { 
-      id: result.insertId,
-      username, 
-      email,
-      role 
-    };
-  } finally {
-    connection.release();
   }
-}
 
   // Get database connection
   getConnection() {
@@ -120,7 +122,6 @@ async createUserIfNotExists({ username, email, password, role }) {
 
   // User authentication methods
   async authenticateUser(username, password) {
-
     const connection = await this.pool.getConnection();
     try {
       const [rows] = await connection.execute(
@@ -133,7 +134,6 @@ async createUserIfNotExists({ username, email, password, role }) {
 
       const user = rows[0];
       const isValid = await bcrypt.compare(password, user.password_hash);
-
 
       if (!isValid) {
         return null; // Invalid password
