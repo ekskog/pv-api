@@ -9,7 +9,8 @@ debugAuth('Auth middleware initialized');
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
-  debugAuth('Login request received:', req.body);
+debugAuth(`Login request received: ${JSON.stringify(req.body)}`);
+console.log('/auth/login')
   try {
     const { username, password } = req.body
 
