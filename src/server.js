@@ -8,7 +8,7 @@ const { Client } = require("minio");
 const { v4: uuidv4 } = require("uuid");
 
 // Import authentication components
-const database = require("./config/database");
+const database = require("./services/database-service");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 
@@ -20,7 +20,7 @@ const debugSSE = debug("photovault:sse");
 const debugHealth = debug("photovault:health");
 const debugUpload = debug("photovault:upload");
 const debugMinio = debug("photovault:minio");
-const debugAuth = debug("photovault:auth");
+const debugDB = debug("photovault:database");
 const debugAlbum = debug("photovault:album");
 
 // Store active SSE connections by job ID
@@ -692,7 +692,7 @@ async function initializeDatabase() {
   try {
     await database.initialize();
   } catch (error) {
-    debugAuth(`[server.js LINE 690]: Database initialization failed:`, error.message);
+    debugDB(`[server.js LINE 690]: Database initialization failed:`, error.message);
     //process.env.AUTH_MODE = "demo";
   }
   /*} else {

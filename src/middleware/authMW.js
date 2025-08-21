@@ -1,6 +1,6 @@
 // Authentication middleware and utilities
 const jwt = require('jsonwebtoken')
-const database = require('../config/database')
+const database = require('../services/database-service')
 
 // JWT secret key - should be in environment variables
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'

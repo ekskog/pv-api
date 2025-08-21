@@ -2,12 +2,14 @@
 const express = require('express')
 const { AuthService, authenticateToken, requireRole } = require('../middleware/authMW')
 const router = express.Router()
-
-const database = require('../config/database');
+const database = require('../services/database-service');
+const debug = require("debug");
+const debugAuth = debug("photovault:auth");
+debugAuth('Auth middleware initialized');
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
-  console.log('Login request received:', req.body)
+  debugAuth('Login request received:', req.body);
   try {
     const { username, password } = req.body
 
@@ -183,7 +185,7 @@ router.put('/auth/users/:id/password', authenticateToken, requireRole('admin'), 
     const bcrypt = require('bcryptjs');
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
-    const database = require('../config/database');
+    const database = require('../services/database-service');
     const connection = await database.getConnection().getConnection();
     await connection.execute(
       'UPDATE users SET password_hash = ? WHERE id = ?',
