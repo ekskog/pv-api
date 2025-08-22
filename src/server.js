@@ -75,13 +75,19 @@ const corsOptions = {
 };
 
 // MinIO Client Configuration
-const minioClient = new Client({
-  endPoint: process.env.MINIO_ENDPOINT, // now using mino outside the cluster
-  port: parseInt(process.env.MINIO_PORT),
-  useSSL: process.env.MINIO_USE_SSL === "true",
-  accessKey: process.env.MINIO_ACCESS_KEY,
-  secretKey: process.env.MINIO_SECRET_KEY,
-});
+let minioClient;
+try {
+  minioClient = new Client({
+    endPoint: process.env.MINIO_ENDPOINT, // now using minio outside the cluster
+    port: parseInt(process.env.MINIO_PORT),
+    useSSL: process.env.MINIO_USE_SSL === "true",
+    accessKey: process.env.MINIO_ACCESS_KEY,
+    secretKey: process.env.MINIO_SECRET_KEY,
+  });
+} catch (err) {
+  console.error("MinIO client initialization failed:", err.message);
+  minioClient = null;
+}
 
 // Configure multer for file uploads (store in memory)
 const upload = multer({
@@ -546,6 +552,57 @@ app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) =
   }
 });
 
+// GET /bucket-stats - Returns statistics for the bucket (file count, unique folder paths, total size, file types)
+app.get('/stats', async (req, res) => {
+  try {
+    const bucketName = process.env.MINIO_BUCKET_NAME;
+    let fileCount = 0;
+    let totalSize = 0;
+    const folderSet = new Set();
+    const fileTypeCounts = {};
+    const folderTypeCounts = {};
+
+    const objectsStream = minioClient.listObjectsV2(bucketName, '', true);
+
+    objectsStream.on('data', (obj) => {
+      if (obj.name && !obj.name.endsWith('/')) {
+        fileCount++;
+        totalSize += obj.size || 0;
+        const pathParts = obj.name.split('/');
+        const folder = pathParts.length > 1 ? pathParts[0] : '';
+        if (folder) folderSet.add(folder);
+        // Get file extension
+        const extMatch = obj.name.match(/\.([a-zA-Z0-9]+)$/);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'unknown';
+        // Count file types globally
+        fileTypeCounts[ext] = (fileTypeCounts[ext] || 0) + 1;
+        // Count file types per folder
+        if (folder) {
+          if (!folderTypeCounts[folder]) folderTypeCounts[folder] = {};
+          folderTypeCounts[folder][ext] = (folderTypeCounts[folder][ext] || 0) + 1;
+        }
+      }
+    });
+
+    objectsStream.on('end', () => {
+      res.json({
+        success: true,
+        bucket: bucketName,
+        fileCount,
+        totalSize,
+        uniqueFolders: Array.from(folderSet),
+        fileTypeCounts,
+        folderTypeCounts,
+      });
+    });
+
+    objectsStream.on('error', (err) => {
+      res.status(500).json({ success: false, error: err.message });
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Start server with database initialization
 async function startServer() {
