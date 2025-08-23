@@ -274,9 +274,9 @@ class MetadataService {
     async getAddressFromCoordinates(coordinates, filename) {
         if (coordinates === "not found") return "not found";
         
-        const apiKey = process.env.MAPBOX_API_KEY;
+        const apiKey = process.env.MAPBOX_TOKEN;
         if (!apiKey) {
-            console.log('⚠️  MAPBOX_API_KEY not found in environment variables');
+            console.log('⚠️  MAPBOX_TOKEN not found in environment variables');
             return "API key not configured";
         }
         
