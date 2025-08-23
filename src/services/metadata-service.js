@@ -1,9 +1,8 @@
-const ExifReader = require("exifreader");
+const exifr = require('exifr');
 const debug = require("debug");
 
 const debugMetadata = debug("photovault:metadata");
 const debugGps = debug("photovault:metadata:gps");
-
 
 
 /**
@@ -16,155 +15,235 @@ class MetadataService {
     this.gpsCache = new Map(); // Cache GPS lookups
   }
 
-  /**
-   * Extract only the essential metadata: date and GPS location
-   */
-  async extractEssentialMetadata(imageBuffer, filename) {
-    try {
-      const tags = ExifReader.load(imageBuffer, { expanded: false });
-
-      const metadata = {
-        dateTaken: this.extractDate(tags),
-        gpsCoordinates: null,
-        gpsAddress: null,
-        hasData: false,
-      };
-
-      // Extract GPS and resolve address if coordinates exist
-      const coords = this.extractGPS(tags);
-      if (coords) {
-        metadata.gpsCoordinates = `${coords.lat},${coords.lng}`;
-        metadata.gpsAddress = await this.resolveAddress(coords.lat, coords.lng);
-        metadata.hasData = true;
-      }
-
-      if (metadata.dateTaken) {
-        metadata.hasData = true;
-      }
-
-      debugMetadata(`[metadata-service.js LINE 45]: Extracted metadata for ${filename}: ${JSON.stringify(metadata)}`);
-      return metadata;
-    } catch (error) {
-      debugMetadata(
-        `[metadata-service.js LINE 48]: Failed to extract metadata from ${filename}: ${error.message}`
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Extract date from EXIF - try the most common tags only
-   */
-  extractDate(tags) {
-    const dateFields = ["DateTimeOriginal", "DateTime", "DateTimeDigitized"];
-
-    for (const field of dateFields) {
-      if (tags[field]?.description) {
+    /**
+     * Extract essential metadata from image buffer
+     * @param {Buffer} buffer - Image buffer
+     * @param {string} filename - Original filename
+     * @returns {Object} Extracted metadata
+     */
+    async extractEssentialMetadata(buffer, filename) {
         try {
-          // Convert EXIF date format "2024:07:21 14:02:24" to ISO
-          const isoDate = tags[field].description.replace(
-            /(\d{4}):(\d{2}):(\d{2})/,
-            "$1-$2-$3"
-          );
-          return new Date(isoDate).toISOString();
+            console.log(`Extracting metadata from: ${filename}`);
+            
+            // Extract comprehensive metadata in one pass
+            const exifData = await exifr.parse(buffer, {
+                gps: true,
+                pick: [
+                    // Date/time
+                    'DateTimeOriginal', 'CreateDate', 'DateTime', 'DateTimeDigitized',
+                    // GPS
+                    'latitude', 'longitude', 'GPSLatitude', 'GPSLongitude', 
+                    'GPSLatitudeRef', 'GPSLongitudeRef',
+                    // Camera info
+                    'Make', 'Model', 'Software', 'LensModel',
+                    // Photo settings
+                    'ISO', 'ISOSpeedRatings', 'FNumber', 'ApertureValue', 
+                    'ExposureTime', 'ShutterSpeedValue', 'FocalLength', 'Flash', 'WhiteBalance',
+                    // Image properties
+                    'ImageWidth', 'ImageHeight', 'ExifImageWidth', 'ExifImageHeight', 
+                    'Orientation', 'ColorSpace', 'XResolution', 'YResolution'
+                ]
+            });
+
+            const metadata = {
+                sourceImage: filename,
+                timestamp: "not found",
+                coordinates: "not found",
+                address: "not found",
+                camera: {
+                    make: "not found",
+                    model: "not found", 
+                    software: "not found",
+                    lens: "not found"
+                },
+                settings: {
+                    iso: "not found",
+                    aperture: "not found",
+                    shutterSpeed: "not found",
+                    focalLength: "not found",
+                    flash: "not found",
+                    whiteBalance: "not found"
+                },
+                dimensions: {
+                    width: "not found",
+                    height: "not found",
+                    orientation: "not found",
+                    colorSpace: "not found",
+                    resolution: {
+                        x: "not found",
+                        y: "not found"
+                    }
+                }
+            };
+            
+            if (exifData) {
+                // Extract timestamp
+                const dateFields = ['DateTimeOriginal', 'CreateDate', 'DateTime', 'DateTimeDigitized'];
+                for (const field of dateFields) {
+                    if (exifData[field]) {
+                        try {
+                            metadata.timestamp = new Date(exifData[field]).toISOString();
+                            break;
+                        } catch (e) {
+                            continue;
+                        }
+                    }
+                }
+                
+                // Extract GPS coordinates
+                let lat, lng;
+                
+                // Method 1: Direct decimal coordinates
+                if (exifData.latitude && exifData.longitude) {
+                    lat = exifData.latitude;
+                    lng = exifData.longitude;
+                }
+                // Method 2: DMS format conversion
+                else if (exifData.GPSLatitude && exifData.GPSLongitude && 
+                         Array.isArray(exifData.GPSLatitude) && Array.isArray(exifData.GPSLongitude)) {
+                    
+                    const latDMS = exifData.GPSLatitude;
+                    const lngDMS = exifData.GPSLongitude;
+                    const latRef = exifData.GPSLatitudeRef || 'N';
+                    const lngRef = exifData.GPSLongitudeRef || 'E';
+                    
+                    if (latDMS.length >= 3 && lngDMS.length >= 3) {
+                        lat = this.dmsToDecimal(latDMS[0], latDMS[1], latDMS[2], latRef);
+                        lng = this.dmsToDecimal(lngDMS[0], lngDMS[1], lngDMS[2], lngRef);
+                    }
+                }
+                
+                if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
+                    metadata.coordinates = `${lat},${lng}`;
+                    
+                    // Get address from coordinates if available
+                    metadata.address = await this.getAddressFromCoordinates(metadata.coordinates, filename);
+                }
+
+                // Extract camera info
+                metadata.camera.make = exifData.Make || "not found";
+                metadata.camera.model = exifData.Model || "not found";
+                metadata.camera.software = exifData.Software || "not found";
+                metadata.camera.lens = exifData.LensModel || "not found";
+
+                // Extract photo settings
+                metadata.settings.iso = exifData.ISO || exifData.ISOSpeedRatings || "not found";
+                metadata.settings.aperture = exifData.FNumber || exifData.ApertureValue || "not found";
+                metadata.settings.shutterSpeed = exifData.ExposureTime || exifData.ShutterSpeedValue || "not found";
+                metadata.settings.focalLength = exifData.FocalLength || "not found";
+                metadata.settings.flash = exifData.Flash || "not found";
+                metadata.settings.whiteBalance = exifData.WhiteBalance || "not found";
+
+                // Extract dimensions
+                metadata.dimensions.width = exifData.ImageWidth || exifData.ExifImageWidth || "not found";
+                metadata.dimensions.height = exifData.ImageHeight || exifData.ExifImageHeight || "not found";
+                metadata.dimensions.orientation = exifData.Orientation || "not found";
+                metadata.dimensions.colorSpace = exifData.ColorSpace || "not found";
+                metadata.dimensions.resolution.x = exifData.XResolution || "not found";
+                metadata.dimensions.resolution.y = exifData.YResolution || "not found";
+            }
+            
+            return metadata;
+            
         } catch (error) {
-          continue; // Try next field
+            console.error(`Error extracting metadata from ${filename}:`, error.message);
+            
+            return {
+                sourceImage: filename,
+                timestamp: "not found",
+                coordinates: "not found",
+                address: "not found",
+                camera: {
+                    make: "not found",
+                    model: "not found",
+                    software: "not found",
+                    lens: "not found"
+                },
+                settings: {
+                    iso: "not found",
+                    aperture: "not found",
+                    shutterSpeed: "not found",
+                    focalLength: "not found",
+                    flash: "not found",
+                    whiteBalance: "not found"
+                },
+                dimensions: {
+                    width: "not found",
+                    height: "not found",
+                    orientation: "not found",
+                    colorSpace: "not found",
+                    resolution: {
+                        x: "not found",
+                        y: "not found"
+                    }
+                }
+            };
         }
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Extract GPS coordinates from EXIF
-   */
-  extractGPS(tags) {
-    if (!tags.GPSLatitude || !tags.GPSLongitude) {
-      return null;
     }
 
-    try {
-      const lat = this.parseCoordinate(
-        tags.GPSLatitude,
-        tags.GPSLatitudeRef?.description
-      );
-      const lng = this.parseCoordinate(
-        tags.GPSLongitude,
-        tags.GPSLongitudeRef?.description
-      );
-
-      if (lat !== null && lng !== null) {
-        return { lat, lng };
-      }
-    } catch (error) {
-      debugGps(`[metadata-service.js LINE 99]: GPS parsing error: ${error.message}`);
+    /**
+     * Convert DMS (degrees, minutes, seconds) to decimal degrees
+     * @param {number} degrees - Degrees
+     * @param {number} minutes - Minutes
+     * @param {number} seconds - Seconds
+     * @param {string} direction - Direction (N, S, E, W)
+     * @returns {number} Decimal degrees
+     */
+    dmsToDecimal(degrees, minutes, seconds, direction) {
+        let decimal = degrees + minutes / 60 + seconds / 3600;
+        if (direction === 'S' || direction === 'W') {
+            decimal = decimal * -1;
+        }
+        return decimal;
     }
 
-    return null;
-  }
+    /**
+     * Get address from coordinates using Mapbox API
+     * @param {string} coordinates - Coordinates in "lat,lng" format
+     * @param {string} filename - Filename for logging
+     * @returns {string} Address or error message
+     */
+    async getAddressFromCoordinates(coordinates, filename) {
+        if (coordinates === "not found") return "not found";
+        
+        const apiKey = process.env.MAPBOX_TOKEN;
+        if (!apiKey) {
+            debugGps(`[metadata-service.js LINE 211]:  MAPBOX_TOKEN not found in environment variables`);
+            return "API key not configured";
+        }
+        
+        try {
+            const [lat, lng] = coordinates.split(',');
+            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${apiKey}&types=address,poi,place`;
+            
+            debugGps(` [metadata-service.js LINE 218]:    Coordinates: ${coordinates}`);
+            
+            //const fetch = (await import('node-fetch')).default;
+            //const response = await fetch(url);
 
-  /**
-   * Parse individual GPS coordinate
-   */
-  parseCoordinate(coord, ref) {
-    if (!coord.description) return null;
-
-    let decimal;
-
-    if (typeof coord.description === "number") {
-      decimal = coord.description;
-    } else if (coord.description.includes(",")) {
-      // Parse "degrees,minutes,seconds" format
-      const parts = coord.description.split(",").map((p) => parseFloat(p));
-      if (parts.length === 3) {
-        decimal = parts[0] + parts[1] / 60 + parts[2] / 3600;
-      } else {
-        return null;
-      }
-    } else {
-      decimal = parseFloat(coord.description);
+            const response = await fetch(url, { timeout: 5000 });
+            
+            if (!response.ok) {
+                debugGps(`  [metadata-service.js LINE 227]: Mapbox API error: ${response.status} ${response.statusText}`);
+                return `API error: ${response.status}`;
+            }
+            
+            const data = await response.json();
+            
+            if (data.features && data.features.length > 0) {
+                const feature = data.features[0];
+                const address = feature.place_name || feature.text || "Address not found";
+                debugGps(`  [metadata-service.js LINE 236]:  Found address: ${address}`);
+                return address;
+            } else {
+                debugGps(`  [metadata-service.js LINE 239]:  No features found in Mapbox response`);
+                return "Address not found";
+            }
+        } catch (error) {
+            debugGps(`  [metadata-service.js LINE 243]: Error getting address for ${coordinates}:`, error.message);
+            return "Address lookup failed";
+        }
     }
-
-    if (isNaN(decimal)) return null;
-
-    // Apply hemisphere (S/W = negative)
-    if (ref && (ref === "S" || ref === "W")) {
-      decimal = -decimal;
-    }
-
-    return decimal;
-  }
-
-  /**
-   * Resolve GPS coordinates to address with caching
-   */
-  async resolveAddress(lat, lng) {
-    if (!this.mapboxToken) return null;
-
-    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-
-    if (this.gpsCache.has(cacheKey)) {
-      return this.gpsCache.get(cacheKey);
-    }
-
-    try {
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${this.mapboxToken}&limit=1`,
-        { timeout: 5000 }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const address = data.features?.[0]?.place_name || null;
-        this.gpsCache.set(cacheKey, address);
-        return address;
-      }
-    } catch (error) {
-      debugGps(`[metadata-service.js LINE 162]: Address lookup failed: ${error.message}`);
-    }
-
-    return null;
-  }
 
   /**
    * Update folder metadata JSON with essential data only
