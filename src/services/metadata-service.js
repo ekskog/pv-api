@@ -274,9 +274,9 @@ class MetadataService {
     async getAddressFromCoordinates(coordinates, filename) {
         if (coordinates === "not found") return "not found";
         
-        const apiKey = process.env.MAPBOX_TOKEN;
+        const apiKey = process.env.MAPBOX_API_KEY;
         if (!apiKey) {
-            console.log('⚠️  MAPBOX_TOKEN not found in environment variables');
+            console.log('⚠️  MAPBOX_API_KEY not found in environment variables');
             return "API key not configured";
         }
         
@@ -286,8 +286,10 @@ class MetadataService {
             
             console.log(`   Coordinates: ${coordinates}`);
             
-            const fetch = (await import('node-fetch')).default;
-            const response = await fetch(url);
+            //const fetch = (await import('node-fetch')).default;
+            //const response = await fetch(url);
+
+            const response = await fetch(url, { timeout: 5000 });
             
             if (!response.ok) {
                 console.log(`   ❌ Mapbox API error: ${response.status} ${response.statusText}`);
