@@ -106,7 +106,7 @@ class UploadService {
       );
 
       // Process the converted file from microservice
-      debugImage(`[upload-service.js LINE 110]: Processing converted file from microservice for ${file.originalname}`);
+      debugImage(`[upload-service.js LINE 109: Processing converted file from microservice for ${file.originalname}`);
       const convertedFile = this._processConvertedFileFromMicroservice(
         conversionResult.data.files
       );
@@ -228,7 +228,7 @@ class UploadService {
     }
 
     try {
-      debugImage(`[upload-service.js LINE 234]: Processing converted file: ${fileData.filename}`);
+      debugImage(`[upload-service.js LINE 231]: Processing converted file: ${fileData.filename}`);
       
       // Decode base64 content back to buffer
       const fileBuffer = Buffer.from(fileData.content, "base64");
