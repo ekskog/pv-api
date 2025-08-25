@@ -65,7 +65,7 @@ volumes:
 
 ## Frontend Performance Achievements
 
-### AlbumDetail.vue Progressive Loading
+### AlbumViewer.vue Progressive Loading
 - ✅ **Grid Display**: Only thumbnails (`_thumbnail.avif`) - ultra-fast loading
 - ✅ **Background Preloading**: Full-size images loaded silently
 - ✅ **Instant Lightbox**: Preloaded images display immediately
@@ -120,7 +120,7 @@ The structured JSON logs are ready for integration with:
 - `/PRODUCTION_LOGGING.md` - **CREATED** - Comprehensive documentation
 
 ### Frontend Files (Previously Completed)
-- `/src/components/AlbumDetail.vue` - **ENHANCED** - Progressive loading system
+- `/src/components/AlbumViewer.vue` - **ENHANCED** - Progressive loading system
 - `/PROGRESSIVE_LOADING_IMPLEMENTATION.md` - **CREATED** - Implementation docs
 
 ## Ready for Production 🚀

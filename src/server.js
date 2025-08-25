@@ -26,10 +26,10 @@ const debugAlbum = debug("photovault:album");
 // Store active SSE connections by job ID
 const sseConnections = new Map();
 
-const sendSSEEvent = (jobId, eventType, data) => {
+const sendSSEEvent = (jobId, eventType, data = {}) => {
   const connection = sseConnections.get(jobId);
   if (!connection) {
-    debugSSE(`[[server.js LINE 32]: ${new Date().toISOString()}] No connection found for job ${jobId}`);
+    debugSSE(`[server.js] No connection found for job ${jobId}`);
     return;
   }
 
@@ -43,18 +43,26 @@ const sendSSEEvent = (jobId, eventType, data) => {
 
   try {
     connection.write(message);
-    debugSSE(`[[server.js LINE 46]: ${new Date().toISOString()}] Event ${message} sent successfully to job ${jobId}`);
-    if (eventType === "complete") {
-      connection.end();
-      sseConnections.delete(jobId);
-      debugSSE(`[server.js LINE 50]: ${new Date().toISOString()}] Connection closed for job ${jobId}`);
-    }
+    debugSSE(`[server.js] Event "${eventType}" sent to job ${jobId}`);
+
+if (eventType === "complete") {
+  // Send final message
+  connection.write(`data: ${JSON.stringify(eventData)}\n\n`);
+
+  // Send a comment to signal graceful shutdown
+  connection.write(`: closing connection\n\n`);
+
+  // End the stream
+  connection.end();
+  sseConnections.delete(jobId);
+}
+
   } catch (error) {
-    debugSSE(`[server.js LINE 48]: ${new Date().toISOString()}] Error sending to job ${jobId}: ${error.message}`);
-    // Remove failed connection
+    debugSSE(`[server.js] Error sending to job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   }
 };
+
 
 // Import services
 const UploadService = require("./services/upload-service");
@@ -523,6 +531,53 @@ app.get("/buckets/:bucketName/download", async (req, res) => {
     });
   }
 });
+
+app.get("/buckets/:bucketName/count", async (req, res) => {
+  try {
+    const { bucketName } = req.params;
+    const { prefix = "" } = req.query;
+
+    let totalObjects = 0;
+    let totalFolders = 0;
+
+    const stream = minioClient.listObjectsV2(bucketName, prefix, false, "/");
+
+    for await (const obj of stream) {
+      const objKey = obj.name || obj.prefix;
+
+      // Skip metadata JSON files
+      if (obj.name?.endsWith(".json") && obj.name.includes("/")) {
+        const parts = obj.name.split("/");
+        const fileName = parts.at(-1);
+        const folderName = parts.at(-2);
+        if (fileName === `${folderName}.json`) continue;
+      }
+
+      if (obj.prefix) {
+        totalFolders++;
+      } else {
+        totalObjects++;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        bucket: bucketName,
+        prefix: prefix || "/",
+        totalObjects,
+        totalFolders,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in /count:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 
 // DELETE /buckets/:bucketName/upload - Delete objects(s) from a bucket
 app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) => {
