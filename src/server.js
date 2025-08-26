@@ -49,9 +49,6 @@ if (eventType === "complete") {
   // Send final message
   connection.write(`data: ${JSON.stringify(eventData)}\n\n`);
 
-  // Send a comment to signal graceful shutdown
-  connection.write(`: closing connection\n\n`);
-
   // End the stream
   connection.end();
   sseConnections.delete(jobId);
@@ -189,8 +186,9 @@ app.get("/processing-status/:jobId", (req, res) => {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
-    Connection: "keep-alive",
+    "Connection": "keep-alive",
     "Access-Control-Allow-Origin": "*",
+    "Transfer-Encoding": "chunked",
     "Access-Control-Allow-Headers": "Cache-Control",
   });
 
