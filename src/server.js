@@ -5,19 +5,20 @@ const cors = require("cors");
 const multer = require("multer");
 const debug = require("debug");
 const { Client } = require("minio");
+
 const { v4: uuidv4 } = require("uuid");
 
 // Import authentication components
 const database = require("./services/database-service");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
+const healthRoutes = require("./routes/user");
 
 const { authenticateToken, requireRole } = require("./middleware/authMW");
 
 // Debug namespaces
 const debugServer = debug("photovault:server");
 const debugSSE = debug("photovault:sse");
-const debugHealth = debug("photovault:health");
 const debugUpload = debug("photovault:upload");
 const debugMinio = debug("photovault:minio");
 const debugDB = debug("photovault:database");
@@ -106,76 +107,10 @@ const upload = multer({
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
-app.use("/auth", authRoutes);
-app.use("/user", userRoutes);
+
 
 // Initialize Services
 const uploadService = new UploadService(minioClient);
-
-// Health check route
-app.get("/health", async (req, res) => {
-  debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
-
-  let minioHealthy = false;
-  let converterHealthy = false;
-  let albumsCount = 0;
-
-  // MinIO check
-  try {
-    const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
-    albumsCount = albums.length;
-    minioHealthy = true;
-    debugHealth(`[server.js LINE 112]: MinIO healthy, ${albumsCount} albums`);
-  } catch (error) {
-    debugHealth(`[server.js LINE 114]: MinIO failure: ${error.message}`);
-  }
-
-  // Converter check
-  try {
-    const converterUrl = process.env.AVIF_CONVERTER_URL;
-    const timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT, 10);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(`${converterUrl}/health`, {
-      signal: controller.signal,
-    });
-
-    clearTimeout(timer);
-
-    if (response.ok) {
-      converterHealthy = true;
-      debugHealth(`[server.js LINE 133]: Converter is healthy`);
-    } else {
-      debugHealth(`[server.js LINE 135]: Converter unhealthy: ${response.status}`);
-    }
-  } catch (error) {
-    debugHealth(`[server.js LINE 138]: Converter failure: ${error.message}`);
-  }
-
-  // Compose response
-  const isHealthy = minioHealthy && converterHealthy;
-  const status = isHealthy ? "healthy" : "degraded";
-  const code = isHealthy ? 200 : 503;
-
-  //debugHealth(`[server.js LINE 146]: Responding with ${status} (${code})`);
-  res.status(code).json({
-    status,
-    timestamp: new Date().toISOString(),
-    minio: {
-      connected: minioHealthy,
-      albums: albumsCount,
-      endpoint: process.env.MINIO_ENDPOINT,
-    },
-    converter: {
-      connected: converterHealthy,
-      endpoint: process.env.AVIF_CONVERTER_URL,
-    },
-  });
-
-});
-
 
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
@@ -794,6 +729,11 @@ process.on("SIGINT", async () => {
   }
   process.exit(0);
 });
+
+// Mount route modules with dependency injection
+app.use("/auth", authRoutes);
+app.use("/user", userRoutes);
+app.use("/", healthRoutes(minioClient, countAlbums));
 
 async function initializeDatabase() {
   //const authMode = process.env.AUTH_MODE;
