@@ -4,7 +4,6 @@ const debug = require('debug');
 const { authenticateToken, requireRole } = require('../middleware/authMW');
 
 const debugMinio = debug('photovault:minio');
-const debugAlbum = debug('photovault:album');
 const debugUpload = debug('photovault:upload');
 
 const router = express.Router();
@@ -73,7 +72,7 @@ const listBucketObjects = (minioClient) => async (req, res) => {
 
     res.json(responseData);
   } catch (error) {
-    debugMinio("Error in GET /buckets/:bucketName/objects:", error.message);
+    debugMinio(`[buckets.js - line 76] Error in GET /buckets/:bucketName/objects:`, error.message);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -94,7 +93,7 @@ const createFolder = (minioClient) => async (req, res) => {
     cleanPath = cleanPath.replace(/\/+/g, "/"); // Replace multiple slashes with single slash
 
     if (!cleanPath) {
-      debugAlbum("ERROR: Invalid folder path after cleaning");
+      debugBucket(`ERROR: Invalid folder path after cleaning`);
       return res.status(400).json({
         success: false,
         error: "Invalid folder path",
@@ -102,7 +101,7 @@ const createFolder = (minioClient) => async (req, res) => {
     }
 
     const normalizedPath = `${cleanPath}/`;
-    debugAlbum(`Final normalized path: "${normalizedPath}"`);
+    debugBucket(`[buckets.js - line 164]:Final normalized path: "${normalizedPath}"`);
 
     const existingObjects = [];
     const stream = minioClient.listObjectsV2(bucketName, normalizedPath, false);
@@ -113,7 +112,7 @@ const createFolder = (minioClient) => async (req, res) => {
     }
 
     if (existingObjects.length > 0) {
-      debugAlbum(`ERROR: Folder already exists (${existingObjects.length} objects found)`);
+      debugBucket(`[buckets.js - line 165]: ERROR: Folder already exists (${existingObjects.length} objects found)`);
       return res.status(409).json({
         success: false,
         error: "Folder already exists",

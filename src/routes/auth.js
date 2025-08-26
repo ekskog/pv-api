@@ -11,8 +11,8 @@ const config = require('../config'); // defaults to ./config/index.js
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
-debugAuth(`Login request received: ${JSON.stringify(req.body)}`);
-console.log('/auth/login')
+  debugAuth(`[auth.js - line 14]: Login request received: ${JSON.stringify(req.body)}`);
+  console.log('/auth/login')
   try {
     const { username, password } = req.body
 
@@ -26,7 +26,7 @@ console.log('/auth/login')
 
     // Authenticate user
     const user = await AuthService.authenticateUser(username, password)
-    
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -98,7 +98,7 @@ router.post('/logout', authenticateToken, (req, res) => {
 
 // GET /auth/status - Check authentication status and mode
 router.get('/status', (req, res) => {
-  
+
   res.json({
     success: true,
     data: {
@@ -114,7 +114,7 @@ router.post('/refresh', authenticateToken, async (req, res) => {
   try {
     // Generate new token for current user
     const newToken = AuthService.generateToken(req.user)
-    
+
     res.json({
       success: true,
       data: {

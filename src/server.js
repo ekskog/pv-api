@@ -73,7 +73,7 @@ const PORT = config.server.port;
 // MinIO Client Configuration
 let minioClient;
 try {
-  console.log("MinIO Client Configuration:", config.minio);
+  debugServer("[server.js - line 76: MinIO Client Configuration:", config.minio);
 
   minioClient = new Client({
     endpoint: config.minio.endpoint,
@@ -217,7 +217,7 @@ async function startServer() {
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  debugServer(`[server.js LINE 676]: Shutting down server...`);
+  debugServer(`[server.js LINE 220]: Shutting down server...`);
   if (config.auth.mode) {
     await database.close();
   }
@@ -238,7 +238,7 @@ async function initializeDatabase() {
   try {
     await database.initialize();
   } catch (error) {
-    debugDB(`[server.js LINE 690]: Database initialization failed:`, error.message);
+    debugDB(`[server.js LINE 241]: Database initialization failed:`, error.message);
     //process.env.AUTH_MODE = "demo";
   }
   /*} else {

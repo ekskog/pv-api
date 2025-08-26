@@ -18,9 +18,9 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
     const albums = await countAlbums(config.minio.bucketName);
     albumsCount = albums.length;
     minioHealthy = true;
-    debugHealth(`MinIO healthy, ${albumsCount} albums`);
+    debugHealth(`[health.js - line 21]: MinIO healthy, ${albumsCount} albums`);
   } catch (error) {
-    debugHealth(`MinIO failure: ${error.message}`);
+    debugHealth(`[health.js - line 23]: MinIO failure: ${error.message}`);
   }
 
   // Converter check
@@ -39,12 +39,12 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
 
     if (response.ok) {
       converterHealthy = true;
-      debugHealth(`Converter is healthy`);
+      debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
-      debugHealth(`Converter unhealthy: ${response.status}`);
+      debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
     }
   } catch (error) {
-    debugHealth(`Converter failure: ${error.message}`);
+    debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
   }
 
   // Compose response

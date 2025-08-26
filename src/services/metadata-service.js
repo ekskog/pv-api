@@ -254,7 +254,7 @@ class MetadataService {
     const apiKey = this.mapboxToken;
     if (!apiKey) {
       debugGps(
-        `[metadata-service.js LINE 211]:  MAPBOX_TOKEN not found in environment variables`
+        `[metadata-service.js LINE 257]:  MAPBOX_TOKEN not found in environment variables`
       );
       return "API key not configured";
     }
@@ -264,7 +264,7 @@ class MetadataService {
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${apiKey}&types=address,poi,place`;
 
       debugGps(
-        ` [metadata-service.js LINE 218]:    Coordinates: ${coordinates}`
+        ` [metadata-service.js LINE 267]:    Coordinates: ${coordinates}`
       );
 
       //const fetch = (await import('node-fetch')).default;
@@ -274,7 +274,7 @@ class MetadataService {
 
       if (!response.ok) {
         debugGps(
-          `  [metadata-service.js LINE 227]: Mapbox API error: ${response.status} ${response.statusText}`
+          `  [metadata-service.js LINE 277]: Mapbox API error: ${response.status} ${response.statusText}`
         );
         return `API error: ${response.status}`;
       }
@@ -286,18 +286,18 @@ class MetadataService {
         const address =
           feature.place_name || feature.text || "Address not found";
         debugGps(
-          `  [metadata-service.js LINE 236]:  Found address: ${address}`
+          `  [metadata-service.js LINE 289]:  Found address: ${address}`
         );
         return address;
       } else {
         debugGps(
-          `  [metadata-service.js LINE 239]:  No features found in Mapbox response`
+          `  [metadata-service.js LINE 294]:  No features found in Mapbox response`
         );
         return "Address not found";
       }
     } catch (error) {
       debugGps(
-        `  [metadata-service.js LINE 243]: Error getting address for ${coordinates}:`,
+        `  [metadata-service.js LINE 300]: Error getting address for ${coordinates}:`,
         error.message
       );
       return "Address lookup failed";
@@ -312,7 +312,7 @@ class MetadataService {
     if (!folderName || folderName === objectName) return; // Skip root uploads
     const jsonFileName = `${folderName}/${folderName}.json`;
     debugMetadata(
-      `[metadata-service.js LINE 176]: Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`
+      `[metadata-service.js LINE 315]: Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`
     );
 
     try {
@@ -321,7 +321,7 @@ class MetadataService {
 
       try {
         debugMetadata(
-          `[metadata-service.js LINE 186]: Attempting to retrieve existing metadata from ${jsonFileName}...`
+          `[metadata-service.js LINE 324]: Attempting to retrieve existing metadata from ${jsonFileName}...`
         );
         const stream = await this.minioClient.getObject(
           bucketName,
@@ -331,7 +331,7 @@ class MetadataService {
         const rawData = Buffer.concat(chunks).toString();
         folderData = JSON.parse(rawData);
         debugMetadata(
-          `[metadata-service.js LINE 195]: Parsed existing metadata successfully.`
+          `[metadata-service.js LINE 334]: Parsed existing metadata successfully.`
         );
       } catch (err) {
         debugMetadata(
@@ -367,13 +367,13 @@ class MetadataService {
         jsonContent
       );
       debugMetadata(
-        `[metadata-service.js LINE 228]: Successfully saved metadata. ETag: ${minioResult.etag}`
+        `[metadata-service.js LINE 370]: Successfully saved metadata. ETag: ${minioResult.etag}`
       );
 
       return true;
     } catch (error) {
       debugMetadata(
-        `[metadata-service.js LINE 234]: Failed to update folder metadata: ${error.message}`
+        `[metadata-service.js LINE 376]: Failed to update folder metadata: ${error.message}`
       );
       return false;
     }

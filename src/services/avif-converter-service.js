@@ -1,8 +1,6 @@
 const debug = require("debug");
 // Debug namespaces
 const debugConverter = debug("photovault:converter");
-const debugHealth = debug("photovault:converter:health");
-const debugConversion = debug("photovault:converter:conversion");
 const config = require('../config'); // defaults to ./config/index.js
 
 class AvifConverterService {
