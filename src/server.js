@@ -1,7 +1,6 @@
 // force rebuild on 11/08 13:38
 require("dotenv").config();
 const config = require('./config'); // defaults to ./config/index.js
-config.validateConfig();
 
 const express = require("express");
 const cors = require("cors");
@@ -27,7 +26,6 @@ const debugSSE = debug("photovault:sse");
 const debugUpload = debug("photovault:upload");
 const debugMinio = debug("photovault:minio");
 const debugDB = debug("photovault:database");
-const debugAlbum = debug("photovault:album");
 
 // Store active SSE connections by job ID
 const sseConnections = new Map();
@@ -66,13 +64,11 @@ if (eventType === "complete") {
   }
 };
 
-
 // Import services
 const UploadService = require("./services/upload-service");
 
 const app = express();
 const PORT = config.server.port;
-
 
 // MinIO Client Configuration
 let minioClient;
@@ -103,7 +99,6 @@ const upload = multer({
 app.use(cors(config.cors));
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
-
 
 // Initialize Services
 const uploadService = new UploadService(minioClient);
@@ -209,123 +204,14 @@ async function startServer() {
     debugServer(`[server.js LINE 551]: Database initialized successfully`);
     // Start HTTP server
     app.listen(PORT, () => {
-      //const authMode = process.env.AUTH_MODE ;
-      //const k8sService = process.env.K8S_SERVICE_NAME || "photovault-api-service";
-      //const k8sNamespace = process.env.K8S_NAMESPACE || "photovault";
-      //const publicUrl = process.env.PUBLIC_API_URL || "https://vault-api.hbvu.su";
-      //debugServer(`Starting PhotoVault ${new Date()}...`);
-      //debugServer(`> PhotoVault API server running on port ${PORT}`);
-      //debugServer(`> Health check (internal): http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/health`);
-      //debugServer(`Health check (public): ${publicUrl}/health`);
-      //debugServer(`> Authentication: http://${k8sService}.${k8sNamespace}.svc.cluster.local:${PORT}/auth/status`);
-      //debugServer(`> MinIO endpoint: ${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`);
-      //debugServer(`Auth Mode: ${authMode}`);
+      const k8sService = config.kubernetes.serviceName;
+      const k8sNamespace = config.kubernetes.namespace || "photovault";
+      debugServer(`Starting PhotoVault ${new Date()}...`);
+      debugServer(`> PhotoVault API server running on port ${config.server.port}`);
     });
   } catch (error) {
     debugServer(`[server.js LINE 567]: Failed to start server:`, error.message);
     process.exit(1);
-  }
-}
-
-// Background processing function for asynchronous uploads
-// Add detailed logging for background processing
-// Background processing function for asynchronous uploads with SSE updates
-async function processFilesInBackground(
-  files,
-  bucketName,
-  folderPath,
-  startTime,
-  jobId
-) {
-  try {
-    const uploadResults = [];
-    const errors = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-
-      try {
-        debugUpload(`[server.js LINE 590]: Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
-
-        // Process the individual file
-        const result = await uploadService.processAndUploadFile(
-          file,
-          bucketName,
-          folderPath
-        );
-        uploadResults.push(result);
-
-        debugUpload(`[server.js LINE 600]: Successfully processed: ${file.originalname}`);
-      } catch (error) {
-        debugUpload(`[server.js LINE 602]: Error processing file ${file.originalname}: ${error.message}`);
-        errors.push({
-          filename: file.originalname,
-          error: error.message,
-        });
-      }
-    }
-
-    const processingTime = Date.now() - startTime;
-    debugUpload(`[server.js LINE 611]: Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
-
-    // Send single completion message
-    if (errors.length === 0) {
-      sendSSEEvent(jobId, "complete", {
-        status: "success",
-        message: `All ${files.length} files processed successfully!`,
-        results: {
-          uploaded: uploadResults.length,
-          failed: 0,
-          processingTime: processingTime,
-        },
-      });
-    } else if (uploadResults.length === 0) {
-      sendSSEEvent(jobId, "complete", {
-        status: "failed",
-        message: `All files failed to process. Please check the files and try again.`,
-        results: {
-          uploaded: 0,
-          failed: errors.length,
-          processingTime: processingTime,
-        },
-        errors: errors,
-      });
-    } else {
-      sendSSEEvent(jobId, "complete", {
-        status: "partial",
-        message: `${uploadResults.length} files processed successfully, ${errors.length} failed.`,
-        results: {
-          uploaded: uploadResults.length,
-          failed: errors.length,
-          processingTime: processingTime,
-        },
-        errors: errors,
-      });
-    }
-
-    // Clean up SSE connections after 30 seconds
-    setTimeout(() => {
-      debugUpload(`[server.js LINE 650]: Cleaning up SSE connections for job ${jobId}`);
-      sseConnections.delete(jobId);
-    }, 300000);
-  } catch (error) {
-    const errorTime = Date.now() - startTime;
-    debugUpload(`[server.js LINE 655]: Background processing error after ${errorTime}ms:`, {
-      error: error.message,
-      stack: error.stack,
-    });
-
-    // Send error completion message
-    sendSSEEvent(jobId, "complete", {
-      status: "failed",
-      message: `Processing failed: ${error.message}`,
-      error: error.message,
-    });
-
-    // Clean up connections
-    setTimeout(() => {
-      sseConnections.delete(jobId);
-    }, 30000);
   }
 }
 
