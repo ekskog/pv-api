@@ -1,8 +1,8 @@
 const exifr = require("exifr");
 const debug = require("debug");
-
 const debugMetadata = debug("photovault:metadata");
 const debugGps = debug("photovault:metadata:gps");
+const config = require('../config'); // defaults to ./config/index.js
 
 /**
  * Optimized Metadata Service - Only extracts date and GPS location
@@ -10,7 +10,7 @@ const debugGps = debug("photovault:metadata:gps");
 class MetadataService {
   constructor(minioClient, mapboxToken = null) {
     this.minioClient = minioClient;
-    this.mapboxToken = mapboxToken || process.env.MAPBOX_TOKEN;
+    this.mapboxToken = config.mapbox_token;
     this.gpsCache = new Map(); // Cache GPS lookups
   }
 
@@ -251,7 +251,7 @@ class MetadataService {
   async getAddressFromCoordinates(coordinates, filename) {
     if (coordinates === "not found") return "not found";
 
-    const apiKey = process.env.MAPBOX_TOKEN;
+    const apiKey = this.mapboxToken;
     if (!apiKey) {
       debugGps(
         `[metadata-service.js LINE 211]:  MAPBOX_TOKEN not found in environment variables`

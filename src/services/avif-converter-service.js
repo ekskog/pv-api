@@ -1,15 +1,15 @@
 const debug = require("debug");
-
 // Debug namespaces
 const debugConverter = debug("photovault:converter");
 const debugHealth = debug("photovault:converter:health");
 const debugConversion = debug("photovault:converter:conversion");
+const config = require('../config'); // defaults to ./config/index.js
 
 class AvifConverterService {
   constructor() {
     // Consolidated microservice configuration
-    this.converterUrl = process.env.AVIF_CONVERTER_URL;
-    this.converterTimeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT);
+    this.converterUrl = config.converter.url;
+    this.converterTimeout = parseInt(config.converter.timeout);
   }
 
   /**

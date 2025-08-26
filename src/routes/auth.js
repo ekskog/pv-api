@@ -6,6 +6,8 @@ const database = require('../services/database-service');
 const debug = require("debug");
 const debugAuth = debug("photovault:auth");
 debugAuth('Auth middleware initialized');
+const config = require('../config'); // defaults to ./config/index.js
+
 
 // POST /auth/login - User login
 router.post('/login', async (req, res) => {
@@ -47,7 +49,7 @@ console.log('/auth/login')
           role: user.role
         },
         token,
-        expiresIn: process.env.JWT_EXPIRES_IN || '24h'
+        expiresIn: config.auth.jwtExpiresIn || '24h'
       }
     })
 
@@ -96,14 +98,13 @@ router.post('/logout', authenticateToken, (req, res) => {
 
 // GET /auth/status - Check authentication status and mode
 router.get('/status', (req, res) => {
-  const authMode = process.env.AUTH_MODE
   
   res.json({
     success: true,
     data: {
-      authMode,
-      jwtConfigured: !!process.env.JWT_SECRET,
-      databaseConfigured: !!(process.env.DB_HOST && process.env.DB_PASSWORD)
+      authMode: config.auth.mode,
+      jwtConfigured: !!config.auth.jwtSecret,
+      databaseConfigured: !!(config.database.host && config.database.password)
     }
   })
 })
@@ -118,7 +119,7 @@ router.post('/refresh', authenticateToken, async (req, res) => {
       success: true,
       data: {
         token: newToken,
-        expiresIn: process.env.JWT_EXPIRES_IN || '24h'
+        expiresIn: config.auth.jwtExpiresIn
       }
     })
   } catch (error) {

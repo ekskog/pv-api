@@ -1,8 +1,9 @@
 // routes/health.js
 const express = require('express');
 const debug = require('debug');
-
 const debugHealth = debug('photovault:health');
+const config = require('../config'); // defaults to ./config/index.js
+
 
 // Health check route
 const healthCheck = (minioClient, countAlbums) => async (req, res) => {
@@ -14,7 +15,7 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
 
   // MinIO check
   try {
-    const albums = await countAlbums(process.env.MINIO_BUCKET_NAME);
+    const albums = await countAlbums(config.minio.bucketName);
     albumsCount = albums.length;
     minioHealthy = true;
     debugHealth(`MinIO healthy, ${albumsCount} albums`);
@@ -24,8 +25,8 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
 
   // Converter check
   try {
-    const converterUrl = process.env.AVIF_CONVERTER_URL;
-    const timeout = parseInt(process.env.AVIF_CONVERTER_TIMEOUT, 10);
+    const converterUrl = config.avif.converterUrl;
+    const timeout = parseInt(config.avif.converterTimeout, 10);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -57,11 +58,11 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
     minio: {
       connected: minioHealthy,
       albums: albumsCount,
-      endpoint: process.env.MINIO_ENDPOINT,
+      endpoint: config.minio.endpoint,
     },
     converter: {
       connected: converterHealthy,
-      endpoint: process.env.AVIF_CONVERTER_URL,
+      endpoint: config.avif.converterUrl,
     },
   });
 };

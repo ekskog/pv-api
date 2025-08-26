@@ -1,9 +1,10 @@
 // routes/albums.js
 const express = require('express');
 const debug = require('debug');
-
 const debugAlbum = debug('photovault:album');
 const debugMinio = debug('photovault:minio');
+
+const config = require('../config'); // defaults to ./config/index.js
 
 const router = express.Router();
 
@@ -11,9 +12,9 @@ const router = express.Router();
 const getAlbums = (minioClient) => async (req, res) => {
     try {
         const folderSet = new Set();
-        debugAlbum(`[albums.js - line 14] Fetching albums from MinIO bucket: ${process.env.MINIO_BUCKET_NAME}`);
+        debugAlbum(`[albums.js - line 14] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
         const objectsStream = minioClient.listObjectsV2(
-            process.env.MINIO_BUCKET_NAME,
+            config.minio.bucketName,
             "",
             true
         );
@@ -52,7 +53,7 @@ const getAlbums = (minioClient) => async (req, res) => {
 // GET /stats - Returns statistics for the bucket
 const getStats = (minioClient) => async (req, res) => {
     try {
-        const bucketName = process.env.MINIO_BUCKET_NAME;
+        const bucketName = config.minio.bucketName;
         let fileCount = 0;
         let totalSize = 0;
         const folderSet = new Set();

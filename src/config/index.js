@@ -83,7 +83,7 @@ const config = {
     enableDebug: process.env.NODE_ENV === 'development',
   },
 
-  // Kubernetes Configuration (if applicable)
+  mapbox_token: process.env.MAPBOX_TOKEN,   // Kubernetes Configuration (if applicable)
   kubernetes: {
     serviceName: process.env.K8S_SERVICE_NAME || 'photovault-api-service',
     namespace: process.env.K8S_NAMESPACE || 'photovault',
