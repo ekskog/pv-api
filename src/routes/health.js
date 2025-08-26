@@ -4,8 +4,6 @@ const debug = require('debug');
 
 const debugHealth = debug('photovault:health');
 
-const router = express.Router();
-
 // Health check route
 const healthCheck = (minioClient, countAlbums) => async (req, res) => {
   debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
@@ -69,8 +67,9 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
 };
 
 // Export factory function that accepts dependencies
+
 module.exports = (minioClient, countAlbums) => {
+  const router = express.Router(); // <-- moved inside the function
   router.get('/health', healthCheck(minioClient, countAlbums));
-  
   return router;
 };

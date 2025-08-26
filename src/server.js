@@ -12,7 +12,7 @@ const { v4: uuidv4 } = require("uuid");
 const database = require("./services/database-service");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
-const healthRoutes = require("./routes/user");
+const healthRoutes = require("./routes/health");
 
 const { authenticateToken, requireRole } = require("./middleware/authMW");
 
