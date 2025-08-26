@@ -25,8 +25,8 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
 
   // Converter check
   try {
-    const converterUrl = config.avif.converterUrl;
-    const timeout = parseInt(config.avif.converterTimeout, 10);
+    const converterUrl = config.converter.url;
+    const timeout = parseInt(config.converter.timeout, 10);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -62,7 +62,7 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
     },
     converter: {
       connected: converterHealthy,
-      endpoint: config.avif.converterUrl,
+      endpoint: config.converter.url,
     },
   });
 };
