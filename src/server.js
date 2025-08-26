@@ -13,6 +13,7 @@ const database = require("./services/database-service");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const healthRoutes = require("./routes/health");
+const albumRoutes = require("./routes/albums");
 
 const { authenticateToken, requireRole } = require("./middleware/authMW");
 
@@ -150,47 +151,6 @@ app.get("/processing-status/:jobId", (req, res) => {
   req.on("error", (error) => {
     sseConnections.delete(jobId);
   });
-});
-
-// GET /albums - List all albums (public access for album browsing)
-app.get("/albums", async (req, res) => {
-  try {
-    const folderSet = new Set();
-
-    const objectsStream = minioClient.listObjectsV2(
-      process.env.MINIO_BUCKET_NAME,
-      "",
-      true
-    );
-
-    objectsStream.on("data", (obj) => {
-      const key = obj.name;
-      const topLevelPrefix = key.split("/")[0];
-      if (key.includes("/")) {
-        folderSet.add(topLevelPrefix);
-      }
-    });
-
-    objectsStream.on("end", () => {
-      debugMinio(`[server.js LINE 223]: Number of top-level folders: ${folderSet.size}`);
-      debugMinio(`[server.js LINE 224]: ${JSON.stringify([...folderSet], null, 2)}`);
-    });
-
-    objectsStream.on("error", (err) => {
-      debugMinio(`[server.js LINE 228]: Error listing objects: ${err}`);
-    });
-    res.json({
-      success: true,
-      data: [...folderSet],
-      message: "Albums retrieved successfully",
-      count: folderSet.size,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
 });
 
 // List objects in a bucket (Admin only)
@@ -734,6 +694,7 @@ process.on("SIGINT", async () => {
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 app.use("/", healthRoutes(minioClient, countAlbums));
+app.use("/", albumRoutes(minioClient));
 
 async function initializeDatabase() {
   //const authMode = process.env.AUTH_MODE;
