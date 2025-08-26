@@ -23,7 +23,6 @@ const { authenticateToken, requireRole } = require("./middleware/authMW");
 // Debug namespaces
 const debugServer = debug("photovault:server");
 const debugSSE = debug("photovault:sse");
-const debugUpload = debug("photovault:upload");
 const debugMinio = debug("photovault:minio");
 const debugDB = debug("photovault:database");
 
@@ -76,7 +75,7 @@ try {
   debugServer("[server.js - line 76: MinIO Client Configuration:", config.minio.endpoint);
 
   minioClient = new Client({
-    endpoint: config.minio.endpoint,
+    endPoint: config.minio.endpoint,
     port: parseInt(config.minio.port),
     useSSL: config.minio.useSSL,
     accessKey: config.minio.accessKey,
