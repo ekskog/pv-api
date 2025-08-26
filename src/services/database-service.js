@@ -1,6 +1,8 @@
 // Database configuration and connection setup
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
+const config = require('../config'); // defaults to ./config/index.js
+
 
 class Database {
   constructor() {
@@ -13,20 +15,7 @@ class Database {
     if (this.isInitialized) return;
 
     try {
-      const dbConfig = {
-        host: process.env.DB_HOST || "mariadb.data.svc.cluster.local",
-        port: process.env.DB_PORT || 3306,
-        user: process.env.DB_USER || "root",
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME || "photovault",
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        connectTimeout: 60000,
-      };
-
-      this.pool = mysql.createPool(dbConfig);
-
+      this.pool = mysql.createPool(config.database);
       const connection = await this.pool.getConnection();
       await connection.ping();
       connection.release();

@@ -1,5 +1,8 @@
 // force rebuild on 11/08 13:38
 require("dotenv").config();
+const config = require('./config'); // defaults to ./config/index.js
+config.validateConfig();
+
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -67,29 +70,20 @@ if (eventType === "complete") {
 const UploadService = require("./services/upload-service");
 
 const app = express();
-const PORT = process.env.PORT;
+const PORT = config.server.port;
 
-// CORS Configuration - Allow frontend domain
-const corsOptions = {
-  origin: [
-    "https://photos.hbvu.su",
-    "http://localhost:5173", // For development
-    "http://localhost:3000", // Alternative dev port
-  ],
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
-};
 
 // MinIO Client Configuration
 let minioClient;
 try {
+  console.log("MinIO Client Configuration:", config.minio);
+
   minioClient = new Client({
-    endPoint: process.env.MINIO_ENDPOINT, // now using minio outside the cluster
-    port: parseInt(process.env.MINIO_PORT),
-    useSSL: process.env.MINIO_USE_SSL === "true",
-    accessKey: process.env.MINIO_ACCESS_KEY,
-    secretKey: process.env.MINIO_SECRET_KEY,
+    endpoint: config.minio.endpoint,
+    port: parseInt(config.minio.port),
+    useSSL: config.minio.useSSL,
+    accessKey: config.minio.accessKey,
+    secretKey: config.minio.secretKey,
   });
 } catch (err) {
   console.error("MinIO client initialization failed:", err.message);
@@ -105,7 +99,7 @@ const upload = multer({
 });
 
 // Middleware
-app.use(cors(corsOptions));
+app.use(cors(config.cors));
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 
@@ -505,7 +499,7 @@ app.delete("/buckets/:bucketName/objects", authenticateToken, async (req, res) =
 // GET /bucket-stats - Returns statistics for the bucket (file count, unique folder paths, total size, file types)
 app.get('/stats', async (req, res) => {
   try {
-    const bucketName = process.env.MINIO_BUCKET_NAME;
+    const bucketName = config.minio.MINIO_BUCKET_NAME;
     let fileCount = 0;
     let totalSize = 0;
     const folderSet = new Set();
@@ -686,7 +680,7 @@ async function processFilesInBackground(
 // Graceful shutdown
 process.on("SIGINT", async () => {
   debugServer(`[server.js LINE 676]: Shutting down server...`);
-  if (process.env.AUTH_MODE === "database") {
+  if (config.auth.mode) {
     await database.close();
   }
   process.exit(0);
