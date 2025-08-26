@@ -73,7 +73,7 @@ const PORT = config.server.port;
 // MinIO Client Configuration
 let minioClient;
 try {
-  debugServer("[server.js - line 76: MinIO Client Configuration:", config.minio);
+  debugServer("[server.js - line 76: MinIO Client Configuration:", config.minio.endpoint);
 
   minioClient = new Client({
     endpoint: config.minio.endpoint,
@@ -83,7 +83,7 @@ try {
     secretKey: config.minio.secretKey,
   });
 } catch (err) {
-  console.error("MinIO client initialization failed:", err.message);
+  debugServer("[server.js - line 86]: MinIO client initialization failed:", err.message);
   minioClient = null;
 }
 
