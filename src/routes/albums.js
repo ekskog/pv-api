@@ -11,7 +11,7 @@ const router = express.Router();
 const getAlbums = (minioClient) => async (req, res) => {
   try {
     const folderSet = new Set();
-
+debugAlbum(`[albums.js - line 14] Fetching albums from MinIO bucket: ${process.env.MINIO_BUCKET_NAME}`);
     const objectsStream = minioClient.listObjectsV2(
       process.env.MINIO_BUCKET_NAME,
       "",
