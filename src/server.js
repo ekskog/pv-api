@@ -228,7 +228,7 @@ app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 app.use("/", healthRoutes(minioClient, countAlbums));
 app.use("/", albumRoutes(minioClient));
-app.use("/", bucketRoutes(minioClient));
+app.use("/buckets", bucketRoutes(minioClient));
 
 async function initializeDatabase() {
   //const authMode = process.env.AUTH_MODE;
