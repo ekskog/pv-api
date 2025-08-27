@@ -10,6 +10,7 @@ const router = express.Router();
 
 // GET /albums - List all albums (public access for album browsing)
 const getAlbums = (minioClient) => async (req, res) => {
+    debugAlbum(`[albums.js - line 10] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
     try {
         const folderSet = new Set();
         debugAlbum(`[albums.js - line 14] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
