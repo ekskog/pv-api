@@ -29,19 +29,22 @@ const getAlbums = (minioClient) => async (req, res) => {
 
         objectsStream.on("end", () => {
             debugMinio(`[albums.js - line 31]: Number of top-level folders: ${folderSet.size}`);
-            debugMinio(`${JSON.stringify([...folderSet], null, 2)}`);
+            debugMinio(`[albums.js - line 32]: ${JSON.stringify([...folderSet], null, 2)}`);
         });
 
         objectsStream.on("error", (err) => {
             debugMinio(`[albums.js - line 36]: Error listing objects: ${err}`);
         });
 
-        res.json({
+        let result = {
             success: true,
             data: [...folderSet],
             message: "Albums retrieved successfully",
             count: folderSet.size,
-        });
+        }
+
+        debugAlbum(`[albums.js - line 46] Retrieved ${JSON.stringify(result, null, 2)}`);
+        res.json(result);
     } catch (error) {
         res.status(500).json({
             success: false,
