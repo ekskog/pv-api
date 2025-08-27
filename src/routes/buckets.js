@@ -12,6 +12,7 @@ const router = express.Router();
 
 // List objects in a bucket (Admin only)
 const listBucketObjects = (minioClient) => async (req, res) => {
+  console.log(`Listing objects in bucket: ${req.params.bucketName}`);
   try {
     const { bucketName } = req.params;
     const { prefix = "" } = req.query;
