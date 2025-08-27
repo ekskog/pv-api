@@ -10,49 +10,55 @@ const router = express.Router();
 
 // GET /albums - List all albums (public access for album browsing)
 const getAlbums = (minioClient) => async (req, res) => {
-    debugAlbum(`[albums.js - line 10] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
-    try {
-        const folderSet = new Set();
-        debugAlbum(`[albums.js - line 14] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
-        const objectsStream = minioClient.listObjectsV2(
-            config.minio.bucketName,
-            "",
-            true
-        );
+  debugAlbum(`[albums.js - line 10] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
+  try {
+    const folderSet = new Set();
 
-        objectsStream.on("data", (obj) => {
-            const key = obj.name;
-            const topLevelPrefix = key.split("/")[0];
-            if (key.includes("/")) {
-                folderSet.add(topLevelPrefix);
-            }
-        });
+    // Wrap stream in a Promise
+    const result = await new Promise((resolve, reject) => {
+      const objectsStream = minioClient.listObjectsV2(
+        config.minio.bucketName,
+        "",
+        true
+      );
 
-        objectsStream.on("end", () => {
-            debugMinio(`[albums.js - line 31]: Number of top-level folders: ${folderSet.size}`);
-            debugMinio(`[albums.js - line 32]: ${JSON.stringify([...folderSet], null, 2)}`);
-        });
-
-        objectsStream.on("error", (err) => {
-            debugMinio(`[albums.js - line 36]: Error listing objects: ${err}`);
-        });
-
-        let result = {
-            success: true,
-            data: [...folderSet],
-            message: "Albums retrieved successfully",
-            count: folderSet.size,
+      objectsStream.on("data", (obj) => {
+        const key = obj.name;
+        const topLevelPrefix = key.split("/")[0];
+        if (key.includes("/")) {
+          folderSet.add(topLevelPrefix);
         }
+      });
 
-        debugAlbum(`[albums.js - line 46] Retrieved ${JSON.stringify(result, null, 2)}`);
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
+      objectsStream.on("end", () => {
+        debugMinio(`[albums.js - line 31]: Number of top-level folders: ${folderSet.size}`);
+        debugMinio(`[albums.js - line 32]: ${JSON.stringify([...folderSet], null, 2)}`);
+
+        resolve({
+          success: true,
+          data: [...folderSet],
+          message: "Albums retrieved successfully",
+          count: folderSet.size,
         });
-    }
+      });
+
+      objectsStream.on("error", (err) => {
+        debugMinio(`[albums.js - line 36]: Error listing objects: ${err}`);
+        reject(err);
+      });
+    });
+
+    debugAlbum(`[albums.js - line 46] Retrieved ${JSON.stringify(result, null, 2)}`);
+    res.json(result);
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
 };
+
 
 // GET /stats - Returns statistics for the bucket
 const getStats = (minioClient) => async (req, res) => {
