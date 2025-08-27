@@ -12,11 +12,10 @@ const router = express.Router();
 
 // List objects in a bucket (Admin only)
 const listBucketObjects = (minioClient) => async (req, res) => {
-  console.log(`Listing objects in bucket: ${req.params.bucketName}`);
   try {
     const { bucketName } = req.params;
     const { prefix = "" } = req.query;
-
+    console.log(`Listing objects in bucket: ${req.params.bucketName}, prefix: ${prefix}`);
     // Check if bucket exists
     const bucketExists = await minioClient.bucketExists(bucketName);
     if (!bucketExists) {
@@ -72,7 +71,7 @@ const listBucketObjects = (minioClient) => async (req, res) => {
         totalObjects: objects.length,
       },
     };
-
+    console.log(`responseData:`, responseData);
     res.json(responseData);
   } catch (error) {
     debugMinio(`[buckets.js - line 76] Error in GET /buckets/:bucketName/objects:`, error.message);
