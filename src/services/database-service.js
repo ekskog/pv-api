@@ -4,6 +4,23 @@ const bcrypt = require("bcryptjs");
 const config = require('../config'); // defaults to ./config/index.js
 
 
+// --- Slug helpers -----------------------------------------------------------
+function slugify(input) {
+  return String(input || '')
+    .normalize('NFKD')                  // split accents
+    .replace(/[\u0300-\u036f]/g, '')    // strip diacritics
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')        // non-alnum -> hyphen
+    .replace(/^-+|-+$/g, '')            // trim hyphens
+    .slice(0, 80);
+}
+
+function makeSlugWithId(name, id) {
+  const base = slugify(name);
+  return base ? `${base}.${id}` : String(id);
+}
+
+
 class Database {
   constructor() {
     this.pool = null;
@@ -202,6 +219,155 @@ class Database {
       );
 
       return result.insertId;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // ========================= ALBUM METHODS =========================
+
+  // Create new album
+  async createAlbum({ name, path, description = null }) {
+    const connection = await this.pool.getConnection();
+    try {
+      // Check if album with this path already exists
+      const [existing] = await connection.execute(
+        "SELECT id FROM albums WHERE path = ?",
+        [path]
+      );
+
+      if (existing.length > 0) {
+        throw new Error("Album with this path already exists");
+      }
+
+      // Insert album without slug first to get the ID
+      const [result] = await connection.execute(
+        "INSERT INTO albums (name, path, description) VALUES (?, ?, ?)",
+        [name, path, description]
+      );
+
+      const albumId = result.insertId;
+
+      // Generate slug using the ID and update the record
+      const slug = makeSlugWithId(name, albumId);
+      
+      await connection.execute(
+        "UPDATE albums SET slug = ? WHERE id = ?",
+        [slug, albumId]
+      );
+
+      // Return the complete album data
+      return {
+        id: albumId,
+        name,
+        slug,
+        path,
+        description,
+      };
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Get album by slug
+  async getAlbumBySlug(slug) {
+    const connection = await this.pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE slug = ?",
+        [slug]
+      );
+
+      return rows.length > 0 ? rows[0] : null;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Get album by ID
+  async getAlbumById(albumId) {
+    const connection = await this.pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE id = ?",
+        [albumId]
+      );
+
+      return rows.length > 0 ? rows[0] : null;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Get album by path
+  async getAlbumByPath(path) {
+    const connection = await this.pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE path = ?",
+        [path]
+      );
+
+      return rows.length > 0 ? rows[0] : null;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Get all albums
+  async getAllAlbums() {
+    const connection = await this.pool.getConnection();
+    try {
+      const [rows] = await connection.execute(
+        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums ORDER BY created_at DESC"
+      );
+
+      return rows;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Update album
+  async updateAlbum(albumId, { name, description }) {
+    const connection = await this.pool.getConnection();
+    try {
+      // If name is being updated, we might want to update the slug too
+      let updateQuery = "UPDATE albums SET updated_at = CURRENT_TIMESTAMP";
+      let params = [];
+
+      if (name !== undefined) {
+        updateQuery += ", name = ?, slug = ?";
+        const newSlug = makeSlugWithId(name, albumId);
+        params.push(name, newSlug);
+      }
+
+      if (description !== undefined) {
+        updateQuery += ", description = ?";
+        params.push(description);
+      }
+
+      updateQuery += " WHERE id = ?";
+      params.push(albumId);
+
+      const [result] = await connection.execute(updateQuery, params);
+
+      return result.affectedRows > 0;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // Delete album
+  async deleteAlbum(albumId) {
+    const connection = await this.pool.getConnection();
+    try {
+      const [result] = await connection.execute(
+        "DELETE FROM albums WHERE id = ?",
+        [albumId]
+      );
+
+      return result.affectedRows > 0;
     } finally {
       connection.release();
     }

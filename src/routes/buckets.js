@@ -2,9 +2,11 @@
 const express = require('express');
 const debug = require('debug');
 const { authenticateToken, requireRole } = require('../middleware/authMW');
+const database = require('../services/database-service'); // Add database import
 
 const debugMinio = debug('photovault:minio');
 const debugUpload = debug('photovault:upload');
+const debugBucket = debug('photovault:bucket'); // Add debug for bucket operations
 
 const router = express.Router();
 
@@ -80,11 +82,11 @@ const listBucketObjects = (minioClient) => async (req, res) => {
   }
 };
 
-// Create a folder (Admin only)
+// Create a folder (Admin only) - UPDATED WITH DATABASE INTEGRATION
 const createFolder = (minioClient) => async (req, res) => {
   try {
     const { bucketName } = req.params;
-    const { folderPath } = req.body;
+    const { folderPath, description } = req.body; // Added description support
 
     // Clean the folder path
     let cleanPath = folderPath.trim();
@@ -103,6 +105,7 @@ const createFolder = (minioClient) => async (req, res) => {
     const normalizedPath = `${cleanPath}/`;
     debugBucket(`[buckets.js - line 164]:Final normalized path: "${normalizedPath}"`);
 
+    // Check if folder already exists in MinIO
     const existingObjects = [];
     const stream = minioClient.listObjectsV2(bucketName, normalizedPath, false);
 
@@ -119,6 +122,20 @@ const createFolder = (minioClient) => async (req, res) => {
       });
     }
 
+    // Check if album already exists in database
+    try {
+      const existingAlbum = await database.getAlbumByPath(normalizedPath);
+      if (existingAlbum) {
+        return res.status(409).json({
+          success: false,
+          error: "Album with this path already exists in database",
+        });
+      }
+    } catch (dbError) {
+      console.warn("Warning: Could not check for existing album in database:", dbError.message);
+      // Continue with folder creation even if DB check fails
+    }
+
     // Create metadata JSON file
     const metadataPath = `${normalizedPath}${cleanPath}.json`;
 
@@ -126,7 +143,7 @@ const createFolder = (minioClient) => async (req, res) => {
       album: {
         name: cleanPath,
         created: new Date().toISOString(),
-        description: "",
+        description: description || "",
         totalObjects: 0,
         totalSize: 0,
         lastModified: new Date().toISOString(),
@@ -136,6 +153,7 @@ const createFolder = (minioClient) => async (req, res) => {
 
     const metadataContent = Buffer.from(JSON.stringify(initialMetadata, null, 2));
 
+    // Create the folder/metadata in MinIO
     await minioClient.putObject(
       bucketName,
       metadataPath,
@@ -147,6 +165,22 @@ const createFolder = (minioClient) => async (req, res) => {
       }
     );
 
+    // Create album record in database
+    let albumData = null;
+    try {
+      albumData = await database.createAlbum({
+        name: cleanPath,
+        path: normalizedPath,
+        description: description || null,
+      });
+      
+      debugBucket(`[buckets.js]: Album created in database with slug: ${albumData.slug}`);
+    } catch (dbError) {
+      console.error("Warning: Could not create album in database:", dbError.message);
+      // Don't fail the whole operation if database insertion fails
+      // The folder was already created in MinIO successfully
+    }
+
     res.status(201).json({
       success: true,
       message: `Folder '${cleanPath}' created successfully`,
@@ -154,9 +188,11 @@ const createFolder = (minioClient) => async (req, res) => {
         bucket: bucketName,
         folderPath: normalizedPath,
         folderName: cleanPath,
+        album: albumData, // Include album data with slug if database creation succeeded
       },
     });
   } catch (error) {
+    console.error("Error creating folder:", error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -280,13 +316,64 @@ const deleteObject = (minioClient) => async (req, res) => {
   }
 };
 
+// NEW: Get album by slug (for sharing URLs)
+const getAlbumBySlug = (minioClient) => async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const album = await database.getAlbumBySlug(slug);
+    
+    if (!album) {
+      return res.status(404).json({
+        success: false,
+        error: 'Album not found'
+      });
+    }
+    
+    // Optionally, you can also fetch the MinIO objects for this album
+    // using the album.path to list objects in that folder
+    
+    res.json({
+      success: true,
+      album: album
+    });
+  } catch (error) {
+    console.error('Error fetching album by slug:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// NEW: List all albums
+const listAlbums = (minioClient) => async (req, res) => {
+  try {
+    const albums = await database.getAllAlbums();
+    res.json({
+      success: true,
+      albums: albums
+    });
+  } catch (error) {
+    console.error('Error fetching albums:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 // Export factory function that accepts dependencies
 module.exports = (minioClient) => {
+  // Existing routes
   router.get('/:bucketName/objects', listBucketObjects(minioClient));
   router.post('/:bucketName/folders', authenticateToken, requireRole('admin'), createFolder(minioClient));
   router.get('/:bucketName/download', downloadObject(minioClient));
   router.get('/:bucketName/count', getBucketCount(minioClient));
   router.delete('/:bucketName/objects', authenticateToken, deleteObject(minioClient));
+  
+  // NEW routes for album sharing
+  router.get('/album/:slug', getAlbumBySlug(minioClient)); // For sharing URLs like /album/dublin-trip.25
+  router.get('/albums', listAlbums(minioClient)); // List all albums
   
   return router;
 };
