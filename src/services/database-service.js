@@ -319,9 +319,8 @@ class Database {
     const connection = await this.pool.getConnection();
     try {
       const [rows] = await connection.execute(
-        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums ORDER BY created_at DESC"
+        "SELECT name, slug, path, description, created_at, updated_at FROM albums ORDER BY created_at DESC"
       );
-
       return rows;
     } finally {
       connection.release();

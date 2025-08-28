@@ -10,26 +10,37 @@ const debugAlbum = debug('photovault:album');
 const debugMinio = debug('photovault:minio');
 
 // GET /albums - List all albums (public access for album browsing)
-const getAlbums = (minioClient) => async (req, res) => {
-  debugAlbum(`[albums.js - line 10] Fetching albums from database`);
+const getAlbums = (minioClient, database) => async (req, res) => {
   try {
+    console.log('[DEBUG] Fetching albums from database');
     const albums = await database.getAllAlbums();
     console.log('[DEBUG] Database returned:', albums.length, 'albums');
-    
+
+    // Map over albums and fetch object counts in MinIO
+    const albumMetadata = await Promise.all(
+      albums.map(async (album) => {
+        const fileCount = await countObjectsInPath(minioClient, 'photovault', album.path);
+
+        return {
+          ...album,   // keep name, slug, path, description, etc.
+          fileCount,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: albums,
-      message: "Albums retrieved successfully",
-      count: albums.length,
+      albums: albumMetadata,
     });
   } catch (error) {
-    console.log('[DEBUG] Database error:', error.message);
+    console.error('[DEBUG] Error:', error.message);
     res.status(500).json({
       success: false,
       error: error.message,
     });
   }
 };
+
 
 
 // GET /stats - Returns statistics for the bucket
@@ -86,6 +97,26 @@ const getStats = (minioClient) => async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
+// Helper: counts objects under a given prefix (album path) in MinIO
+function countObjectsInPath(minioClient, bucket, prefix) {
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    const stream = minioClient.listObjectsV2(bucket, prefix, true);
+
+    stream.on('data', () => {
+      count++;
+    });
+
+    stream.on('end', () => {
+      resolve(count);
+    });
+
+    stream.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
 
 // Export factory function that accepts dependencies
 module.exports = (minioClient) => {
