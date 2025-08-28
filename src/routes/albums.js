@@ -58,7 +58,9 @@ const getAlbums = (minioClient) => async (req, res) => {
     });
   }
 };
-
+router.get('/test-albums-loaded', (req, res) => {
+  res.json({ message: 'Albums.js is loaded and working' });
+});
 
 // GET /stats - Returns statistics for the bucket
 const getStats = (minioClient) => async (req, res) => {

@@ -16,6 +16,7 @@ const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const healthRoutes = require("./routes/health");
 const albumRoutes = require("./routes/albums");
+console.log('Loading albums.js routes...');
 const bucketRoutes = require("./routes/buckets");
 
 const { authenticateToken, requireRole } = require("./middleware/authMW");
