@@ -215,10 +215,9 @@ const downloadObject = (minioClient) => async (req, res) => {
 
     // Stream the object directly to the response
     const objectStream = await minioClient.getObject(bucketName, object);
-    // Retrieve object metadata
     const objectStat = await minioClient.statObject(bucketName, object);
-    
-    // Set appropriate headers
+
+    // ✅ Correct content type
     res.setHeader(
       "Content-Type",
       objectStat.metaData["content-type"] || "application/octet-stream"
@@ -227,11 +226,17 @@ const downloadObject = (minioClient) => async (req, res) => {
     res.setHeader("Last-Modified", objectStat.lastModified);
     res.setHeader("ETag", objectStat.etag);
 
-    // Optional: Set Content-Disposition to download file with original name
+    // ✅ Let browsers & CDNs cache aggressively
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=31536000, immutable"
+    );
+
+    // Optional: Inline display instead of download
     const filename = object.split("/").pop();
     res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
 
-    // Pipe the object stream to response
+    // Pipe to response
     objectStream.pipe(res);
   } catch (error) {
     res.status(500).json({
@@ -240,6 +245,7 @@ const downloadObject = (minioClient) => async (req, res) => {
     });
   }
 };
+
 
 // Get bucket/folder count
 const getBucketCount = (minioClient) => async (req, res) => {
