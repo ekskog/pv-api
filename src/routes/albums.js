@@ -10,57 +10,26 @@ const router = express.Router();
 
 // GET /albums - List all albums (public access for album browsing)
 const getAlbums = (minioClient) => async (req, res) => {
-  debugAlbum(`[albums.js - line 10] Fetching albums from MinIO bucket: ${config.minio.bucketName}`);
+  console.log('[DEBUG] getAlbums called - using DATABASE version');
   try {
-    const folderSet = new Set();
-
-    // Wrap stream in a Promise
-    const result = await new Promise((resolve, reject) => {
-      const objectsStream = minioClient.listObjectsV2(
-        config.minio.bucketName,
-        "",
-        true
-      );
-
-      objectsStream.on("data", (obj) => {
-        const key = obj.name;
-        const topLevelPrefix = key.split("/")[0];
-        if (key.includes("/")) {
-          folderSet.add(topLevelPrefix);
-        }
-      });
-
-      objectsStream.on("end", () => {
-        debugMinio(`[albums.js - line 31]: Number of top-level folders: ${folderSet.size}`);
-        debugMinio(`[albums.js - line 32]: ${JSON.stringify([...folderSet], null, 2)}`);
-
-        resolve({
-          success: true,
-          data: [...folderSet],
-          message: "Albums retrieved successfully",
-          count: folderSet.size,
-        });
-      });
-
-      objectsStream.on("error", (err) => {
-        debugMinio(`[albums.js - line 36]: Error listing objects: ${err}`);
-        reject(err);
-      });
+    const albums = await database.getAllAlbums();
+    console.log('[DEBUG] Database returned:', albums.length, 'albums');
+    
+    res.json({
+      success: true,
+      data: albums,
+      message: "Albums retrieved successfully",
+      count: albums.length,
     });
-
-    debugAlbum(`[albums.js - line 46] Retrieved ${JSON.stringify(result, null, 2)}`);
-    res.json(result);
-
   } catch (error) {
+    console.log('[DEBUG] Database error:', error.message);
     res.status(500).json({
       success: false,
       error: error.message,
     });
   }
 };
-router.get('/test-albums-loaded', (req, res) => {
-  res.json({ message: 'Albums.js is loaded and working' });
-});
+
 
 // GET /stats - Returns statistics for the bucket
 const getStats = (minioClient) => async (req, res) => {
