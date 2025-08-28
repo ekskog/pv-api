@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const database = require('../services/database-service'); // Add database import
+console.log(database)
 const config = require('../config'); // defaults to ./config/index.js
 
 const debug = require('debug');
@@ -10,7 +11,7 @@ const debugAlbum = debug('photovault:album');
 const debugMinio = debug('photovault:minio');
 
 // GET /albums - List all albums (public access for album browsing)
-const getAlbums = (minioClient, database) => async (req, res) => {
+const getAlbums = (minioClient) => async (req, res) => {
   try {
     console.log('[DEBUG] Fetching albums from database');
     const albums = await database.getAllAlbums();
