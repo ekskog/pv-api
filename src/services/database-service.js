@@ -321,6 +321,7 @@ class Database {
       const [rows] = await connection.execute(
         "SELECT name, slug, path, description, created_at, updated_at FROM albums ORDER BY created_at DESC"
       );
+      console.log('Fetched albums:', rows);
       return rows;
     } finally {
       connection.release();
