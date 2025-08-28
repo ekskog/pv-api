@@ -13,14 +13,12 @@ const debugMinio = debug('photovault:minio');
 // GET /albums - List all albums (public access for album browsing)
 const getAlbums = (minioClient) => async (req, res) => {
   try {
-    console.log('[DEBUG] Fetching albums from database');
     const albums = await database.getAllAlbums();
-    console.log('[DEBUG] Database returned:', albums.length, 'albums');
 
     // Map over albums and fetch object counts in MinIO
     const albumMetadata = await Promise.all(
       albums.map(async (album) => {
-        const fileCount = await countObjectsInPath(minioClient, 'photovault', album.path);
+        const fileCount = await countObjectsInPath(minioClient, 'photovault', album.path) - 1;
 
         return {
           ...album,   // keep name, slug, path, description, etc.
@@ -34,7 +32,7 @@ const getAlbums = (minioClient) => async (req, res) => {
       albums: albumMetadata,
     });
   } catch (error) {
-    console.error('[DEBUG] Error:', error.message);
+    console.error('[album.js line 35] Error:', error.message);
     res.status(500).json({
       success: false,
       error: error.message,
