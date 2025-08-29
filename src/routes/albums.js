@@ -1,16 +1,27 @@
 // routes/albums.js
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
+const { authenticateToken } = require("../middleware/authMW");
 
-const database = require("../services/database-service"); // Add database import
-console.log(database);
-const config = require("../config"); // defaults to ./config/index.js
+const database = require("../services/database-service");
+const config = require("../config");
+const UploadService = require("../services/upload-service");
 
 const debug = require("debug");
 const debugAlbum = debug("photovault:album");
 const debugMinio = debug("photovault:minio");
+const debugUpload = debug("photovault:upload");
 
-// GET /albums - List all albums (public access for album browsing)
+// Configure multer for file uploads (store in memory)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024, // 2GB limit for large video files from iPhone
+  },
+});
+
 const getAlbums = (minioClient) => async (req, res) => {
   try {
     const albums = await database.getAllAlbums();
@@ -43,7 +54,6 @@ const getAlbums = (minioClient) => async (req, res) => {
 
 // GET /albums/:albumName/ - Get photos for album by name
 const getPhotos = (minioClient) => async (req, res) => {
-  console.log("[albums.js] Fetching photos for album:", req.params.albumName);
   try {
     const { name } = req.params;
     debugAlbum(`[albums.js line 49] Fetching album by name: ${name}`);
@@ -104,8 +114,6 @@ const getPhotos = (minioClient) => async (req, res) => {
   }
 };
 
-// GET /album/:name/object - Get any object for an album (lighter endpoint)
-
 // GET /albums/:name/object/:object - Fetch a single object from an album
 const getObject = (minioClient) => async (req, res) => {
   try {
@@ -142,6 +150,92 @@ const getObject = (minioClient) => async (req, res) => {
   }
 };
 
+// POST /buckets/:bucketName/upload - Upload files to a bucket
+const uploadFiles = (minioClient, processFilesInBackground) => async (req, res) => {
+  const startTime = Date.now();
+  const jobId = uuidv4(); // Generate unique job ID for this upload
+
+  try {
+    const { bucketName } = req.params;
+    const { folderPath = "" } = req.body;
+    const files = req.files;
+
+    debugUpload(`[albums.js] Upload request received:`, {
+      jobId,
+      bucket: bucketName,
+      folder: folderPath,
+      filesCount: files ? files.length : 0,
+      user: req.user?.username || "unknown",
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!files || files.length === 0) {
+      debugUpload(`[albums.js] Upload failed: No files provided`);
+      return res.status(400).json({
+        success: false,
+        error: "No files provided",
+      });
+    }
+
+    const response = {
+      success: true,
+      message: "Files received successfully and are being processed",
+      data: {
+        bucket: bucketName,
+        folderPath: folderPath || "/",
+        filesReceived: files.length,
+        status: "processing",
+        jobId: jobId, // Return the job ID to the client
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    res.status(200).json(response);
+    processFilesInBackground(files, bucketName, folderPath, startTime, jobId);
+  } catch (error) {
+    const errorTime = Date.now() - startTime;
+    debugUpload(
+      `[albums.js] Upload error occurred after ${errorTime}ms:`,
+      {
+        error: error.message,
+        stack: error.stack,
+      }
+    );
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// DELETE /buckets/:bucketName/objects - Delete objects from a bucket
+const deleteObjects = (minioClient) => async (req, res) => {
+  const { bucketName } = req.params;
+  const { objectName } = req.body; // Example: "TEST/01.avif"
+
+  try {
+    await minioClient.removeObject(bucketName, objectName);
+
+    debugUpload(`[albums.js] Deleted object:`, {
+      bucket: bucketName,
+      object: objectName,
+      user: req.user?.username || "unknown",
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Object ${objectName} deleted from ${bucketName}`,
+    });
+  } catch (error) {
+    debugUpload(`[albums.js] Delete error:`, error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete object. " + error.message,
+    });
+  }
+};
 
 // Helper: counts objects under a given prefix (album path) in MinIO
 function countObjectsInPath(minioClient, bucket, prefix) {
@@ -164,11 +258,23 @@ function countObjectsInPath(minioClient, bucket, prefix) {
 }
 
 // Export factory function that accepts dependencies
-module.exports = (minioClient) => {
+module.exports = (minioClient, processFilesInBackground) => {
   router.get("/albums", getAlbums(minioClient));
   router.get("/album/:name", getPhotos(minioClient));
   router.get("/objects/:name", getPhotos(minioClient));
-
   router.get("/albums/:name/object/:object", getObject(minioClient));
+  
+  // Upload routes - now in albums.js
+  router.post("/buckets/:bucketName/upload", 
+    authenticateToken, 
+    upload.array("files"), 
+    uploadFiles(minioClient, processFilesInBackground)
+  );
+  
+  router.delete("/buckets/:bucketName/objects", 
+    authenticateToken, 
+    deleteObjects(minioClient)
+  );
+  
   return router;
 };
