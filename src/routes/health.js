@@ -6,18 +6,15 @@ const config = require('../config'); // defaults to ./config/index.js
 
 
 // Health check route
-const healthCheck = (minioClient, countAlbums) => async (req, res) => {
+const healthCheck = (minioClient) => async (req, res) => {
   debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
 
   let minioHealthy = false;
   let converterHealthy = false;
-  let albumsCount = 0;
 
   // MinIO check
   try {
-    const albums = await countAlbums(config.minio.bucketName);
-    albumsCount = albums.length;
-    minioHealthy = true;
+    minioHealthy = await minioClient.listObjectsV2('photovault');
     debugHealth(`[health.js - line 21]: MinIO healthy, ${albumsCount} albums`);
   } catch (error) {
     debugHealth(`[health.js - line 23]: MinIO failure: ${error.message}`);
@@ -57,7 +54,6 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
     timestamp: new Date().toISOString(),
     minio: {
       connected: minioHealthy,
-      albums: albumsCount,
       endpoint: config.minio.endpoint,
     },
     converter: {
@@ -66,6 +62,37 @@ const healthCheck = (minioClient, countAlbums) => async (req, res) => {
     },
   });
 };
+
+async function checkMinioHealth() {
+  try {
+    const stream = minioClient.listObjectsV2('photovault', '', true);
+
+    return await new Promise((resolve, reject) => {
+      let checked = false;
+
+      stream.on('data', obj => {
+        if (!checked) {
+          checked = true;
+          resolve(true); // Bucket is accessible and contains objects
+        }
+      });
+
+      stream.on('end', () => {
+        if (!checked) {
+          resolve(true); // Bucket is accessible but empty
+        }
+      });
+
+      stream.on('error', err => {
+        console.error('MinIO health check failed:', err.message);
+        resolve(false); // Treat error as unhealthy
+      });
+    });
+  } catch (err) {
+    console.error('MinIO health check exception:', err.message);
+    return false;
+  }
+}
 
 // Export factory function that accepts dependencies
 

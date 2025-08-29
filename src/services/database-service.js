@@ -269,13 +269,13 @@ class Database {
     }
   }
 
-  // Get album by slug
-  async getAlbumBySlug(slug) {
+  // Get album by name
+  async getAlbumByName(name) {
     const connection = await this.pool.getConnection();
     try {
       const [rows] = await connection.execute(
-        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE slug = ?",
-        [slug]
+        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE name = ?",
+        [name]
       );
 
       return rows.length > 0 ? rows[0] : null;

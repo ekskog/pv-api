@@ -2,13 +2,43 @@
 require("dotenv").config();
 const config = require('./config'); // defaults to ./config/index.js
 
+// Debug namespaces
+const debug = require("debug");
+const debugServer = debug("photovault:server");
+const debugSSE = debug("photovault:server:sse");
+const debugDB = debug("photovault:server:database");
+
 const express = require("express");
 const cors = require("cors");
-const multer = require("multer");
-const debug = require("debug");
-const { Client } = require("minio");
+const app = express();
+const PORT = config.server.port;
+// Middleware
+app.use(cors(config.cors));
+app.use(express.json({ limit: "2gb" })); // Increased for video uploads
+app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 
+const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
+const { authenticateToken, requireRole } = require("./middleware/authMW");
+
+// Import and Initialize services
+const { Client } = require("minio");
+// MinIO Client Configuration
+let minioClient;
+try {
+  minioClient = new Client({
+    endPoint: config.minio.endpoint,
+    port: parseInt(config.minio.port),
+    useSSL: config.minio.useSSL,
+    accessKey: config.minio.accessKey,
+    secretKey: config.minio.secretKey,
+  });
+} catch (err) {
+  debugServer(`[server.js LINE 39]: MinIO client initialization error: ${err.message}`);
+  minioClient = null;
+}
+const UploadService = require("./services/upload-service");
+const uploadService = new UploadService(minioClient);
 
 // Import authentication components
 const database = require("./services/database-service");
@@ -16,16 +46,7 @@ const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const healthRoutes = require("./routes/health");
 const albumRoutes = require("./routes/albums");
-console.log('Loading albums.js routes...');
-const bucketRoutes = require("./routes/buckets");
-
-const { authenticateToken, requireRole } = require("./middleware/authMW");
-
-// Debug namespaces
-const debugServer = debug("photovault:server");
-const debugSSE = debug("photovault:sse");
-const debugMinio = debug("photovault:minio");
-const debugDB = debug("photovault:database");
+const statRoutes = require("./routes/stats");
 
 // Store active SSE connections by job ID
 const sseConnections = new Map();
@@ -64,29 +85,6 @@ if (eventType === "complete") {
   }
 };
 
-// Import services
-const UploadService = require("./services/upload-service");
-
-const app = express();
-const PORT = config.server.port;
-
-// MinIO Client Configuration
-let minioClient;
-try {
-  debugServer("[server.js - line 76: MinIO Client Configuration:", config.minio.endpoint);
-
-  minioClient = new Client({
-    endPoint: config.minio.endpoint,
-    port: parseInt(config.minio.port),
-    useSSL: config.minio.useSSL,
-    accessKey: config.minio.accessKey,
-    secretKey: config.minio.secretKey,
-  });
-} catch (err) {
-  debugServer("[server.js - line 86]: MinIO client initialization failed:", err.message);
-  minioClient = null;
-}
-
 // Configure multer for file uploads (store in memory)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -94,14 +92,6 @@ const upload = multer({
     fileSize: 2 * 1024 * 1024 * 1024, // 2GB limit for large video files from iPhone
   },
 });
-
-// Middleware
-app.use(cors(config.cors));
-app.use(express.json({ limit: "2gb" })); // Increased for video uploads
-app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
-
-// Initialize Services
-const uploadService = new UploadService(minioClient);
 
 // SSE endpoint - make sure this exists in your server
 app.get("/processing-status/:jobId", (req, res) => {
@@ -143,58 +133,6 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 });
 
-// GET /bucket-stats - Returns statistics for the bucket (file count, unique folder paths, total size, file types)
-app.get('/stats', async (req, res) => {
-  try {
-    const bucketName = config.minio.MINIO_BUCKET_NAME;
-    let fileCount = 0;
-    let totalSize = 0;
-    const folderSet = new Set();
-    const fileTypeCounts = {};
-    const folderTypeCounts = {};
-
-    const objectsStream = minioClient.listObjectsV2(bucketName, '', true);
-
-    objectsStream.on('data', (obj) => {
-      if (obj.name && !obj.name.endsWith('/')) {
-        fileCount++;
-        totalSize += obj.size || 0;
-        const pathParts = obj.name.split('/');
-        const folder = pathParts.length > 1 ? pathParts[0] : '';
-        if (folder) folderSet.add(folder);
-        // Get file extension
-        const extMatch = obj.name.match(/\.([a-zA-Z0-9]+)$/);
-        const ext = extMatch ? extMatch[1].toLowerCase() : 'unknown';
-        // Count file types globally
-        fileTypeCounts[ext] = (fileTypeCounts[ext] || 0) + 1;
-        // Count file types per folder
-        if (folder) {
-          if (!folderTypeCounts[folder]) folderTypeCounts[folder] = {};
-          folderTypeCounts[folder][ext] = (folderTypeCounts[folder][ext] || 0) + 1;
-        }
-      }
-    });
-
-    objectsStream.on('end', () => {
-      res.json({
-        success: true,
-        bucket: bucketName,
-        fileCount,
-        totalSize,
-        uniqueFolders: Array.from(folderSet),
-        fileTypeCounts,
-        folderTypeCounts,
-      });
-    });
-
-    objectsStream.on('error', (err) => {
-      res.status(500).json({ success: false, error: err.message });
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Start server with database initialization
 async function startServer() {
   try {
@@ -227,9 +165,9 @@ process.on("SIGINT", async () => {
 // Mount route modules with dependency injection
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
-app.use("/", healthRoutes(minioClient, countAlbums));
+app.use("/", healthRoutes(minioClient));
 app.use("/", albumRoutes(minioClient));
-app.use("/buckets", bucketRoutes(minioClient));
+app.use("/", statRoutes(minioClient));
 
 async function initializeDatabase() {
   //const authMode = process.env.AUTH_MODE;
@@ -246,30 +184,5 @@ async function initializeDatabase() {
   }*/
 }
 
-async function countAlbums(bucketName) {
-  return new Promise((resolve, reject) => {
-    const folderSet = new Set();
-
-    const objectsStream = minioClient.listObjectsV2(bucketName, "", true);
-
-    objectsStream.on("data", (obj) => {
-      const key = obj.name;
-      const topLevelPrefix = key.split("/")[0];
-      if (key.includes("/")) {
-        folderSet.add(topLevelPrefix);
-      }
-    });
-
-    objectsStream.on("end", () => {
-      const albums = [...folderSet];
-      resolve(albums);
-    });
-
-    objectsStream.on("error", (err) => {
-      debugMinio(`[server.js LINE 718]: Error listing objects:`, err);
-      reject(err);
-    });
-  });
-}
 // Start the server
 startServer();
