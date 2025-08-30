@@ -16,8 +16,9 @@ function slugify(input) {
 }
 
 function makeSlugWithId(name, id) {
-  const base = slugify(name);
-  return base ? `${base}.${id}` : String(id);
+  // Convert to lowercase and replace dots with dashes
+  const base = name.toLowerCase().replace(/\./g, '-');
+  return base || String(id);
 }
 
 
