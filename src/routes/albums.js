@@ -6,15 +6,15 @@ const { v4: uuidv4 } = require("uuid");
 const { authenticateToken, requireRole } = require("../middleware/authMW");
 
 const database = require("../services/database-service");
+const MetadataService = require("../services/metadata-service");
+
 const config = require("../config");
-const UploadService = require("../services/upload-service");
 
 const debug = require("debug");
 const debugAlbum = debug("photovault:album");
 const debugMinio = debug("photovault:minio");
 const debugUpload = debug("photovault:upload");
 
-const fs = require("fs"); // Add this at the top if not already imported
 
 // Configure multer for file uploads (store in memory)
 const upload = multer({
@@ -390,27 +390,105 @@ const deleteObjects = (minioClient) => async (req, res) => {
   }
 };
 
-// Helper: counts objects under a given prefix (album path) in MinIO
-function countObjectsInPath(minioClient, bucket, prefix) {
-  return new Promise((resolve, reject) => {
-    let count = 0;
-    const stream = minioClient.listObjectsV2(bucket, prefix, true);
+// Update photo metadata in the album JSON file
+const updatePhotoMetadata = (minioClient) => async (req, res) => {
+  try {
+    const { folderPath, objectName } = req.params;
+    const { metadata } = req.body;
 
-    stream.on("data", () => {
-      count++;
+    if (!folderPath || !objectName || !metadata) {
+      return res.status(400).json({
+        success: false,
+        message: "folderPath, objectName, and metadata are required."
+      });
+    }
+
+    console.log(`[albums.js] Updating metadata for: ${folderPath}/${objectName}`);
+    console.log(metadata.coordinates)
+    const metadataService = new MetadataService(minioClient);
+
+    await metadataService.getAddressFromCoordinates(metadata.coordinates)
+      .then(address => {
+        console.log(`Address found: ${address}`);
+      })
+      .catch(err => {
+        console.error(`Error finding address: ${err}`);
+      });
+
+    // Construct the metadata file path
+    const metadataPath = `${folderPath}/${folderPath}.json`;
+
+    try {
+      // Read the current metadata file
+      const metadataStream = await minioClient.getObject(config.minio.bucketName, metadataPath);
+      let currentMetadata = "";
+      for await (const chunk of metadataStream) {
+        currentMetadata += chunk.toString();
+      }
+
+      const metadataJson = JSON.parse(currentMetadata);
+      
+      // Find and update the specific photo's metadata
+      const photoIndex = metadataJson.media.findIndex(item => item.sourceImage === `${folderPath}/${objectName}`);
+      
+      if (photoIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Photo not found in metadata."
+        });
+      }
+
+      // Update the metadata for this photo
+      metadataJson.media[photoIndex] = {
+        ...metadataJson.media[photoIndex],
+        ...metadata
+      };
+
+      // Update the lastUpdated timestamp
+      metadataJson.lastUpdated = new Date().toISOString();
+
+      // Write the updated metadata back to MinIO
+      const updatedMetadataContent = Buffer.from(JSON.stringify(metadataJson, null, 2));
+      await minioClient.putObject(
+        config.minio.bucketName,
+        metadataPath,
+        updatedMetadataContent,
+        updatedMetadataContent.length,
+        {
+          "Content-Type": "application/json",
+        }
+      );
+
+      console.log(`[albums.js] Successfully updated metadata for ${objectName}`);
+
+      res.status(200).json({
+        success: true,
+        message: "Photo metadata updated successfully.",
+        data: {
+          updatedPhoto: objectName,
+          metadataPath: metadataPath
+        }
+      });
+
+    } catch (metadataError) {
+      console.error(`[albums.js] Error updating metadata:`, metadataError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update metadata file.",
+        error: metadataError.message
+      });
+    }
+
+  } catch (error) {
+    console.error(`[albums.js] Update metadata error:`, error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update photo metadata. " + error.message,
     });
+  }
+};
 
-    stream.on("end", () => {
-      resolve(count);
-    });
-
-    stream.on("error", (err) => {
-      reject(err);
-    });
-  });
-}
-
-// Export factory function that accepts dependencies
+// Consolidate the module.exports into a single export
 module.exports = (minioClient, processFilesInBackground) => {
   router.get("/albums", getAlbums(minioClient));
   router.get("/album/:name", getPhotos(minioClient));
@@ -435,6 +513,32 @@ module.exports = (minioClient, processFilesInBackground) => {
     requireRole("admin"),
     deleteObjects(minioClient)
   );
+  router.put(
+    "/objects/:folderPath/:objectName",
+    authenticateToken,
+    requireRole("admin"),
+    updatePhotoMetadata(minioClient)
+  );
 
   return router;
 };
+
+// Helper: counts objects under a given prefix (album path) in MinIO
+function countObjectsInPath(minioClient, bucket, prefix) {
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    const stream = minioClient.listObjectsV2(bucket, prefix, true);
+
+    stream.on("data", () => {
+      count++;
+    });
+
+    stream.on("end", () => {
+      resolve(count);
+    });
+
+    stream.on("error", (err) => {
+      reject(err);
+    });
+  });
+}

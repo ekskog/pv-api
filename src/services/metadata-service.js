@@ -248,7 +248,7 @@ class MetadataService {
    * @param {string} filename - Filename for logging
    * @returns {string} Address or error message
    */
-  async getAddressFromCoordinates(coordinates, filename) {
+  async getAddressFromCoordinates(coordinates) {
     if (coordinates === "not found") return "not found";
 
     const apiKey = this.mapboxToken;
