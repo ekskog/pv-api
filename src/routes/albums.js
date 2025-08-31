@@ -14,6 +14,8 @@ const debugAlbum = debug("photovault:album");
 const debugMinio = debug("photovault:minio");
 const debugUpload = debug("photovault:upload");
 
+const fs = require("fs"); // Add this at the top if not already imported
+
 // Configure multer for file uploads (store in memory)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -55,9 +57,6 @@ const getAlbums = (minioClient) => async (req, res) => {
 
 // POST /buckets/:bucketName/folders - Create a folder (Admin only)
 const createAlbum = (minioClient) => async (req, res) => {
-  let minioCreated = false;
-  let databaseCreated = false;
-  
   try {
     const { folderPath } = req.params;
     console.log(`[albums.js line 60] Creating album: ${folderPath}`);
@@ -77,8 +76,8 @@ const createAlbum = (minioClient) => async (req, res) => {
     }
 
     const normalizedPath = `${cleanPath}/`;
+    debugAlbum(`[server.js LINE 76]: Final normalized path: "${normalizedPath}"`);
 
-    // Check if album exists in MinIO
     const existingObjects = [];
     const stream = minioClient.listObjectsV2(process.env.MINIO_BUCKET_NAME, normalizedPath, false);
 
@@ -89,38 +88,24 @@ const createAlbum = (minioClient) => async (req, res) => {
 
     if (existingObjects.length > 0) {
       debugAlbum(
-        `[album.js LINE 92]: ERROR: Album already exists in MinIO (${existingObjects.length} objects found)`
+        `[album.js LINE 92]: ERROR: Album already exists (${existingObjects.length} objects found)`
       );
-    } else {
-      debugAlbum(`[album.js LINE 95]: Not in MinIO`);
       return res.status(409).json({
         success: false,
         error: "Album already exists",
       });
     }
 
-    // Check if album exists in database
-    const existingAlbum = await database.getAlbumByName(cleanPath);
-    if (existingAlbum) {
-      debugAlbum(
-        `[album.js LINE 102]: ERROR: Album already exists in database`
-      );
-    } else {
-      debugAlbum(`[album.js LINE 109]: Not in database`);
-      return res.status(409).json({
-        success: false,
-        error: "Album already exists in database",
-      });
-    }
-
-    // Step 1: Create MinIO folder and metadata file
+    // Instead of creating an empty folder marker, create a metadata JSON file
+    // This serves as both the folder marker and metadata storage
     const metadataPath = `${normalizedPath}${cleanPath}.json`;
+    console.log(`[albums.js line 100] Creating metadata file: ${metadataPath}`);
 
     const initialMetadata = {
       album: {
         name: cleanPath,
         created: new Date().toISOString(),
-        description: req.body.description || "",
+        description: "",
         totalObjects: 0,
         totalSize: 0,
         lastModified: new Date().toISOString(),
@@ -142,47 +127,17 @@ const createAlbum = (minioClient) => async (req, res) => {
         "X-Amz-Meta-Type": "album-metadata",
       }
     );
-    
-    minioCreated = true;
-    debugAlbum(`[albums.js - line 147] MinIO folder and metadata created successfully`);
-
-    // Step 2: Create database record
-    const albumData = {
-      name: cleanPath,
-      path: normalizedPath,
-      description: req.body.description || null // Get description from request body
-    };
-
-    const createdAlbum = await database.createAlbum(albumData);
-    databaseCreated = true;
-    debugAlbum(`[line 158 - albums.js] Database record created successfully:`, createdAlbum);
 
     res.status(201).json({
       success: true,
-      message: `Album '${cleanPath}' created successfully`,
+      message: `Folder '${cleanPath}' created successfully`,
       data: {
         bucket: config.minio.bucketName,
         folderPath: normalizedPath,
         folderName: cleanPath,
-        albumId: createdAlbum.id,
-        slug: createdAlbum.slug,
       },
     });
   } catch (error) {
-    console.error(`[albums.js] Error creating album:`, error);
-    
-    // Comprehensive error handling - cleanup if partial success
-    if (minioCreated && !databaseCreated) {
-      try {
-        // Delete MinIO folder if database creation failed
-        const metadataPath = `${normalizedPath}${cleanPath}.json`;
-        await minioClient.removeObject(config.minio.bucketName, metadataPath);
-        debugAlbum(`[albums.js] Cleaned up MinIO folder after database failure`);
-      } catch (cleanupError) {
-        console.error(`[albums.js] Failed to cleanup MinIO folder:`, cleanupError);
-      }
-    }
-    
     res.status(500).json({
       success: false,
       error: error.message,
@@ -365,8 +320,10 @@ const deleteObjects = (minioClient) => async (req, res) => {
     await minioClient.removeObject(config.minio.bucketName, objectPath);
     debugUpload(`[albums.js] Deleted object from MinIO: ${objectPath}`);
 
-    // Construct metadata path: <folderPath>/<folderPath>.json
-    const metadataPath = `${folderPath}/${folderPath}.json`;
+    // Extract folder name from the path to construct correct metadata path
+    const pathParts = folderPath.split('/');
+    const folderName = pathParts[pathParts.length - 1];
+    const metadataPath = `${folderPath}/${folderName}.json`;
 
     try {
       // Try to read and update the metadata file
@@ -379,9 +336,8 @@ const deleteObjects = (minioClient) => async (req, res) => {
       const metadataJson = JSON.parse(metadata);
       
       // Remove the object from the media array using sourceImage field
-      // sourceImage contains the full path like "3SGLS.BAASATD.25/IMG_1326.avif"
       const originalLength = metadataJson.media.length;
-      metadataJson.media = metadataJson.media.filter((item) => item.sourceImage !== objectPath);
+      metadataJson.media = metadataJson.media.filter((item) => item.sourceImage !== objectName);
       
       // Update lastUpdated timestamp
       metadataJson.lastUpdated = new Date().toISOString();
@@ -398,9 +354,9 @@ const deleteObjects = (minioClient) => async (req, res) => {
             "Content-Type": "application/json",
           }
         );
-        debugUpload(`[albums.js] Updated metadata file: ${metadataPath}, removed object: ${objectPath}`);
+        debugUpload(`[albums.js] Updated metadata file: ${metadataPath}`);
       } else {
-        debugUpload(`[albums.js] Object ${objectPath} not found in metadata, skipping metadata update`);
+        debugUpload(`[albums.js] Object ${objectName} not found in metadata, skipping metadata update`);
       }
 
     } catch (metadataError) {
