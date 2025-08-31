@@ -21,7 +21,6 @@ function makeSlugWithId(name, id) {
   return base || String(id);
 }
 
-
 class Database {
   constructor() {
     this.pool = null;
@@ -52,6 +51,23 @@ class Database {
     } catch (error) {
       console.error("Failed to initialize database:", error.message);
       throw error;
+    }
+  }
+
+  // Check if database is up and running
+  async isHealthy() {
+    if (!this.isInitialized || !this.pool) {
+      return false;
+    }
+
+    try {
+      const connection = await this.pool.getConnection();
+      await connection.ping();
+      connection.release();
+      return true;
+    } catch (error) {
+      console.error("Database health check failed:", error.message);
+      return false;
     }
   }
 
@@ -243,8 +259,8 @@ class Database {
 
       // Insert album without slug first to get the ID
       const [result] = await connection.execute(
-        "INSERT INTO albums (name, path, description) VALUES (?, ?, ?)",
-        [name, path, description]
+        "INSERT INTO albums (name, path, description, counter) VALUES (?, ?, ?, ?)",
+        [name, path, description, 0]
       );
 
       const albumId = result.insertId;

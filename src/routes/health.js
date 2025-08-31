@@ -1,9 +1,9 @@
 // routes/health.js
-const express = require('express');
-const debug = require('debug');
-const debugHealth = debug('photovault:health');
-const config = require('../config'); // defaults to ./config/index.js
-
+const express = require("express");
+const debug = require("debug");
+const debugHealth = debug("photovault:health");
+const config = require("../config"); // defaults to ./config/index.js
+const database = require("../services/database-service");
 
 // Health check route
 const healthCheck = (minioClient) => async (req, res) => {
@@ -11,13 +11,26 @@ const healthCheck = (minioClient) => async (req, res) => {
 
   let minioHealthy = false;
   let converterHealthy = false;
+  let databaseHealthy = false;
 
   // MinIO check
+    try {
+      minioHealthy = await checkMinioHealth(minioClient);
+      console.log('✅ MinIO is up and reachable');
+    } catch (err) {
+      console.error('❌ MinIO is down or unreachable:', err.message);
+    };
+
+  // Database check
   try {
-    minioHealthy = await minioClient.listObjectsV2('photovault');
-    debugHealth(`[health.js - line 21]: MinIO healthy, ${albumsCount} albums`);
-  } catch (error) {
-    debugHealth(`[health.js - line 23]: MinIO failure: ${error.message}`);
+    databaseHealthy = await database.isHealthy();
+    if (databaseHealthy) {
+      console.log('✅ Database is up and reachable');
+    } else {
+      console.log('❌ Database is down or unreachable');
+    }
+  } catch (err) {
+    console.error('❌ Database health check failed:', err.message);
   }
 
   // Converter check
@@ -38,14 +51,16 @@ const healthCheck = (minioClient) => async (req, res) => {
       converterHealthy = true;
       debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
-      debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
+      debugHealth(
+        `[health.js - line 44]: Converter unhealthy: ${response.status}`
+      );
     }
   } catch (error) {
     debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
   }
 
   // Compose response
-  const isHealthy = minioHealthy && converterHealthy;
+  const isHealthy = minioHealthy && converterHealthy && databaseHealthy;
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
@@ -56,6 +71,10 @@ const healthCheck = (minioClient) => async (req, res) => {
       connected: minioHealthy,
       endpoint: config.minio.endpoint,
     },
+    database: {
+      connected: databaseHealthy,
+      type: "MariaDB",
+    },
     converter: {
       connected: converterHealthy,
       endpoint: config.converter.url,
@@ -63,33 +82,33 @@ const healthCheck = (minioClient) => async (req, res) => {
   });
 };
 
-async function checkMinioHealth() {
+async function checkMinioHealth(minioClient) {
   try {
-    const stream = minioClient.listObjectsV2('photovault', '', true);
+    const stream = minioClient.listObjectsV2("photovault", "", true);
 
     return await new Promise((resolve, reject) => {
       let checked = false;
 
-      stream.on('data', obj => {
+      stream.on("data", (obj) => {
         if (!checked) {
           checked = true;
           resolve(true); // Bucket is accessible and contains objects
         }
       });
 
-      stream.on('end', () => {
+      stream.on("end", () => {
         if (!checked) {
           resolve(true); // Bucket is accessible but empty
         }
       });
 
-      stream.on('error', err => {
-        console.error('MinIO health check failed:', err.message);
+      stream.on("error", (err) => {
+        console.error("MinIO health check failed:", err.message);
         resolve(false); // Treat error as unhealthy
       });
     });
   } catch (err) {
-    console.error('MinIO health check exception:', err.message);
+    console.error("MinIO health check exception:", err.message);
     return false;
   }
 }
@@ -98,6 +117,6 @@ async function checkMinioHealth() {
 
 module.exports = (minioClient, countAlbums) => {
   const router = express.Router(); // <-- moved inside the function
-  router.get('/health', healthCheck(minioClient, countAlbums));
+  router.get("/health", healthCheck(minioClient, countAlbums));
   return router;
 };

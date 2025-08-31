@@ -14,8 +14,6 @@ const debugAlbum = debug("photovault:album");
 const debugMinio = debug("photovault:minio");
 const debugUpload = debug("photovault:upload");
 
-const fs = require("fs"); // Add this at the top if not already imported
-
 // Configure multer for file uploads (store in memory)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -79,7 +77,6 @@ const createAlbum = (minioClient) => async (req, res) => {
     }
 
     const normalizedPath = `${cleanPath}/`;
-    debugAlbum(`[server.js LINE 76]: Final normalized path: "${normalizedPath}"`);
 
     // Check if album exists in MinIO
     const existingObjects = [];
@@ -94,6 +91,8 @@ const createAlbum = (minioClient) => async (req, res) => {
       debugAlbum(
         `[album.js LINE 92]: ERROR: Album already exists in MinIO (${existingObjects.length} objects found)`
       );
+    } else {
+      debugAlbum(`[album.js LINE 95]: Not in MinIO`);
       return res.status(409).json({
         success: false,
         error: "Album already exists",
@@ -106,6 +105,8 @@ const createAlbum = (minioClient) => async (req, res) => {
       debugAlbum(
         `[album.js LINE 102]: ERROR: Album already exists in database`
       );
+    } else {
+      debugAlbum(`[album.js LINE 109]: Not in database`);
       return res.status(409).json({
         success: false,
         error: "Album already exists in database",
@@ -114,13 +115,12 @@ const createAlbum = (minioClient) => async (req, res) => {
 
     // Step 1: Create MinIO folder and metadata file
     const metadataPath = `${normalizedPath}${cleanPath}.json`;
-    console.log(`[albums.js line 110] Creating metadata file: ${metadataPath}`);
 
     const initialMetadata = {
       album: {
         name: cleanPath,
         created: new Date().toISOString(),
-        description: "",
+        description: req.body.description || "",
         totalObjects: 0,
         totalSize: 0,
         lastModified: new Date().toISOString(),
@@ -144,18 +144,18 @@ const createAlbum = (minioClient) => async (req, res) => {
     );
     
     minioCreated = true;
-    console.log(`[albums.js] MinIO folder and metadata created successfully`);
+    debugAlbum(`[albums.js - line 147] MinIO folder and metadata created successfully`);
 
     // Step 2: Create database record
     const albumData = {
       name: cleanPath,
       path: normalizedPath,
-      description: null // Will be updated later via UI
+      description: req.body.description || null // Get description from request body
     };
 
     const createdAlbum = await database.createAlbum(albumData);
     databaseCreated = true;
-    console.log(`[albums.js] Database record created successfully:`, createdAlbum);
+    debugAlbum(`[line 158 - albums.js] Database record created successfully:`, createdAlbum);
 
     res.status(201).json({
       success: true,
@@ -177,7 +177,7 @@ const createAlbum = (minioClient) => async (req, res) => {
         // Delete MinIO folder if database creation failed
         const metadataPath = `${normalizedPath}${cleanPath}.json`;
         await minioClient.removeObject(config.minio.bucketName, metadataPath);
-        console.log(`[albums.js] Cleaned up MinIO folder after database failure`);
+        debugAlbum(`[albums.js] Cleaned up MinIO folder after database failure`);
       } catch (cleanupError) {
         console.error(`[albums.js] Failed to cleanup MinIO folder:`, cleanupError);
       }
