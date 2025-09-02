@@ -6,32 +6,6 @@ const database = require('../services/database-service')
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h'
 
-/*
-// Demo users for development mode
-const demoUsers = {
-  admin: {
-    id: 1,
-    username: 'admin',
-    email: 'admin@demo.local',
-    role: 'admin',
-    isActive: true
-  },
-  user: {
-    id: 2,
-    username: 'user', 
-    email: 'user@demo.local',
-    role: 'user',
-    isActive: true
-  }
-}
-
-// Demo credentials
-const demoCredentials = {
-  admin: 'admin123',
-  user: 'user123'
-}
-*/
-
 class AuthService {
   
   // Generate JWT token
