@@ -254,7 +254,8 @@ class Database {
       );
 
       if (existing.length > 0) {
-        throw new Error("Album with this path already exists");
+        console.log("Album with this path already exists");
+        return { result: false, message: "Album with this path already exists" };
       }
 
       // Insert album without slug first to get the ID
@@ -274,13 +275,7 @@ class Database {
       );
 
       // Return the complete album data
-      return {
-        id: albumId,
-        name,
-        slug,
-        path,
-        description,
-      };
+      return { result: true, message: "Album created successfully" };
     } finally {
       connection.release();
     }
@@ -338,7 +333,6 @@ class Database {
       const [rows] = await connection.execute(
         "SELECT name, slug, path, description, created_at, updated_at FROM albums ORDER BY created_at DESC"
       );
-      console.log('Fetched albums:', rows);
       return rows;
     } finally {
       connection.release();

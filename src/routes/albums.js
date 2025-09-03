@@ -57,6 +57,7 @@ const getAlbums = (minioClient) => async (req, res) => {
 
 // POST /buckets/:bucketName/folders - Create a folder (Admin only)
 const createAlbum = (minioClient) => async (req, res) => {
+  debugAlbum(`[albums.js line 58] Create album request received: `, req.body);
   try {
     const { folderPath } = req.params;
     console.log(`[albums.js line 60] Creating album: ${folderPath}`);
@@ -99,7 +100,7 @@ const createAlbum = (minioClient) => async (req, res) => {
     // Instead of creating an empty folder marker, create a metadata JSON file
     // This serves as both the folder marker and metadata storage
     const metadataPath = `${normalizedPath}${cleanPath}.json`;
-    console.log(`[albums.js line 100] Creating metadata file: ${metadataPath}`);
+    debugAlbum(`[albums.js line 100] Creating metadata file: ${metadataPath}`);
 
     const initialMetadata = {
       album: {
@@ -117,7 +118,7 @@ const createAlbum = (minioClient) => async (req, res) => {
       JSON.stringify(initialMetadata, null, 2)
     );
 
-    await minioClient.putObject(
+    let minIoCreate = await minioClient.putObject(
       config.minio.bucketName,
       metadataPath,
       metadataContent,
@@ -127,6 +128,16 @@ const createAlbum = (minioClient) => async (req, res) => {
         "X-Amz-Meta-Type": "album-metadata",
       }
     );
+
+    debugAlbum(`[albums.js line 132] Creating new folderPath in MinIO: ${minIoCreate}`);
+
+    let mariaCreate = await database.createAlbum({
+      name: cleanPath,
+      path: normalizedPath,
+      description: "",
+    });
+
+    debugAlbum(`[albums.js line 140] Creating new row in MariaDB: ${mariaCreate}`);
 
     res.status(201).json({
       success: true,
@@ -334,11 +345,11 @@ const deleteObjects = (minioClient) => async (req, res) => {
       }
 
       const metadataJson = JSON.parse(metadata);
-      
+
       // Remove the object from the media array using sourceImage field
       const originalLength = metadataJson.media.length;
       metadataJson.media = metadataJson.media.filter((item) => item.sourceImage !== objectName);
-      
+
       // Update lastUpdated timestamp
       metadataJson.lastUpdated = new Date().toISOString();
 
@@ -427,10 +438,10 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
       }
 
       const metadataJson = JSON.parse(currentMetadata);
-      
+
       // Find and update the specific photo's metadata
       const photoIndex = metadataJson.media.findIndex(item => item.sourceImage === `${folderPath}/${objectName}`);
-      
+
       if (photoIndex === -1) {
         return res.status(404).json({
           success: false,
