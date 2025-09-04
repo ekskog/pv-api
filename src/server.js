@@ -120,6 +120,7 @@ async function processFilesInBackground(
 
     const processingTime = Date.now() - startTime;
     debugUpload(`[server.js (125)] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
+    debugUpload('--------------------------------------------------------------------------\n')
 
     // Send single completion message
     if (errors.length === 0) {
