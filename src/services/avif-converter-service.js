@@ -50,7 +50,7 @@ class AvifConverterService {
  */
 async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
     try {
-
+      debugConverter(`[(53)] Converting image: ${originalName} (${mimeType})`);
       const endpoint = '/convert';
       const formData = new FormData();
       const blob = new Blob([fileBuffer], { type: mimeType });

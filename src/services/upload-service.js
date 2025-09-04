@@ -38,7 +38,6 @@ class UploadService {
           file.buffer,
           file.originalname
         );
-        //debugUpload(`[(40)]: Extracted metadata for ${file.originalname}}`);
 
         // Process image file
         uploadResult = await this.processImageFile(
@@ -132,7 +131,7 @@ class UploadService {
         versionId: uploadInfo.versionId,
       };
 
-      // debugImage(`[upload-service.js LINE 146]: Image processing completed for ${file.originalname}`);
+      debugImage(`[(134)]: Image processing completed for ${file.originalname}`);
       return uploadResult;
     } catch (error) {
       // debugImage(`[upload-service.js LINE 149]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
