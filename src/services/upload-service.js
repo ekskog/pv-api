@@ -38,9 +38,7 @@ class UploadService {
           file.originalname
         );
         debugUpload(
-          `[upload-service.js (40)]: Extracted metadata for ${
-            file.originalname
-          }: ${JSON.stringify(extractedMetadata)}}`
+          `[upload-service.js (40)]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}}`
         );
 
         // Process image file

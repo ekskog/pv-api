@@ -7,7 +7,7 @@ const debug = require("debug");
 const debugServer = debug("photovault:server");
 const debugSSE = debug("photovault:server:sse");
 const debugDB = debug("photovault:server:database");
-const debugUpload = debug("photovault:upload");
+const debugUpload = debug("photovault:server:upload");
 
 const express = require("express");
 const cors = require("cors");
