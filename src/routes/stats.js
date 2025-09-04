@@ -1,7 +1,7 @@
 // routes/albums.js
 const express = require('express');
-const debug = require('debug');
-const debugStats = debug('photovault:stats');
+// const debug = require('debug');
+// const debugStats = debug('photovault:stats');
 
 const config = require('../config'); // defaults to ./config/index.js
 const router = express.Router();

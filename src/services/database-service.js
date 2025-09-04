@@ -43,9 +43,10 @@ class Database {
       const users = await this.getAllUsers();
       if (users.length === 0) {
         await this.initializeDefaultUsers();
-      } else {
-        console.log(`${users.length} users already exist.`);
-      }
+      } 
+      // else {
+      //   console.log(`${users.length} users already exist.`);
+      // }
 
       return connection;
     } catch (error) {
@@ -254,7 +255,7 @@ class Database {
       );
 
       if (existing.length > 0) {
-        console.log("Album with this path already exists");
+        // console.log("Album with this path already exists");
         return { result: false, message: "Album with this path already exists" };
       }
 

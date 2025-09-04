@@ -31,7 +31,6 @@ const getAlbums = (minioClient) => async (req, res) => {
     // Map over albums and fetch object counts in MinIO
     const albumMetadata = await Promise.all(
       albums.map(async (album) => {
-        console.log(`[albums.js line 40] Fetching file count for album: ${album.name}`);
         const fileCount =
           (await countObjectsInPath(minioClient, "photovault", album.path)) - 1;
 
@@ -57,10 +56,8 @@ const getAlbums = (minioClient) => async (req, res) => {
 
 // POST /buckets/:bucketName/folders - Create a folder (Admin only)
 const createAlbum = (minioClient) => async (req, res) => {
-  debugAlbum(`[albums.js line 58] Create album request received: `, req.body);
   try {
     const { folderPath } = req.params;
-    console.log(`[albums.js line 60] Creating album: ${folderPath}`);
 
     // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
     let cleanPath = folderPath.trim();
@@ -69,7 +66,6 @@ const createAlbum = (minioClient) => async (req, res) => {
     cleanPath = cleanPath.replace(/\/+/g, "/"); // Replace multiple slashes with single slash
 
     if (!cleanPath) {
-      debugAlbum(`[album.js LINE 68]: ERROR: Invalid album name after cleaning`);
       return res.status(400).json({
         success: false,
         error: "Invalid album name",
@@ -77,7 +73,6 @@ const createAlbum = (minioClient) => async (req, res) => {
     }
 
     const normalizedPath = `${cleanPath}/`;
-    debugAlbum(`[server.js LINE 76]: Final normalized path: "${normalizedPath}"`);
 
     const existingObjects = [];
     const stream = minioClient.listObjectsV2(process.env.MINIO_BUCKET_NAME, normalizedPath, false);
@@ -88,9 +83,6 @@ const createAlbum = (minioClient) => async (req, res) => {
     }
 
     if (existingObjects.length > 0) {
-      debugAlbum(
-        `[album.js LINE 92]: ERROR: Album already exists (${existingObjects.length} objects found)`
-      );
       return res.status(409).json({
         success: false,
         error: "Album already exists",
@@ -100,7 +92,6 @@ const createAlbum = (minioClient) => async (req, res) => {
     // Instead of creating an empty folder marker, create a metadata JSON file
     // This serves as both the folder marker and metadata storage
     const metadataPath = `${normalizedPath}${cleanPath}.json`;
-    debugAlbum(`[albums.js line 100] Creating metadata file: ${metadataPath}`);
 
     const initialMetadata = {
       album: {
@@ -129,15 +120,11 @@ const createAlbum = (minioClient) => async (req, res) => {
       }
     );
 
-    debugAlbum(`[albums.js line 132] Creating new folderPath in MinIO: ${minIoCreate}`);
-
     let mariaCreate = await database.createAlbum({
       name: cleanPath,
       path: normalizedPath,
       description: "",
     });
-
-    debugAlbum(`[albums.js line 140] Creating new row in MariaDB: ${mariaCreate}`);
 
     res.status(201).json({
       success: true,
@@ -160,7 +147,6 @@ const createAlbum = (minioClient) => async (req, res) => {
 const getPhotos = (minioClient) => async (req, res) => {
   try {
     const { name } = req.params;
-    debugAlbum(`[albums.js line 49] Fetching album by name: ${name}`);
 
     const album = await database.getAlbumByName(name);
 
@@ -199,8 +185,6 @@ const getPhotos = (minioClient) => async (req, res) => {
       });
     }
 
-    debugAlbum(`[albums.js] Found ${objects.length} objects in album ${name}`);
-
     res.json({
       success: true,
       album: {
@@ -210,7 +194,6 @@ const getPhotos = (minioClient) => async (req, res) => {
       },
     });
   } catch (error) {
-    debugAlbum(`[albums.js] Error fetching album by slug: ${error.message}`);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -222,9 +205,6 @@ const getPhotos = (minioClient) => async (req, res) => {
 const getObject = (minioClient) => async (req, res) => {
   try {
     const { name, object } = req.params;
-    debugAlbum(
-      `[albums.js - line 113] Fetching object "${object}" for album: ${name}`
-    );
 
     const album = await database.getAlbumByName(name);
     if (!album) {
@@ -232,7 +212,6 @@ const getObject = (minioClient) => async (req, res) => {
     }
 
     const objectKey = `${album.path}${object}`;
-    debugMinio(`[albums.js] Fetching MinIO object: ${objectKey}`);
 
     // Get object metadata first (for headers like content-type, length)
     const stat = await minioClient.statObject(
@@ -256,11 +235,9 @@ const getObject = (minioClient) => async (req, res) => {
     stream.pipe(res);
 
     stream.on("error", (err) => {
-      debugMinio(`[albums.js] Error streaming object: ${err.message}`);
       res.status(500).json({ success: false, error: err.message });
     });
   } catch (error) {
-    debugAlbum(`[albums.js] Error fetching object: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -274,17 +251,7 @@ const uploadFiles = (processFilesInBackground) => async (req, res) => {
     const { folderPath = "" } = req.body;
     const files = req.files;
 
-    debugUpload(`[albums.js] Upload request received:`, {
-      jobId,
-      bucket: config.minio.bucketName,
-      folder: folderPath,
-      filesCount: files ? files.length : 0,
-      user: req.user?.username || "unknown",
-      timestamp: new Date().toISOString(),
-    });
-
     if (!files || files.length === 0) {
-      debugUpload(`[albums.js] Upload failed: No files provided`);
       return res.status(400).json({
         success: false,
         error: "No files provided",
@@ -308,10 +275,6 @@ const uploadFiles = (processFilesInBackground) => async (req, res) => {
     processFilesInBackground(files, config.minio.bucketName, folderPath, startTime, jobId);
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    debugUpload(`[albums.js] Upload error occurred after ${errorTime}ms:`, {
-      error: error.message,
-      stack: error.stack,
-    });
 
     res.status(500).json({
       success: false,
@@ -329,7 +292,6 @@ const deleteObjects = (minioClient) => async (req, res) => {
   try {
     // Delete the object from MinIO
     await minioClient.removeObject(config.minio.bucketName, objectPath);
-    debugUpload(`[albums.js] Deleted object from MinIO: ${objectPath}`);
 
     // Extract folder name from the path to construct correct metadata path
     const pathParts = folderPath.split('/');
@@ -365,7 +327,6 @@ const deleteObjects = (minioClient) => async (req, res) => {
             "Content-Type": "application/json",
           }
         );
-        debugUpload(`[albums.js] Updated metadata file: ${metadataPath}`);
       } else {
         debugUpload(`[albums.js] Object ${objectName} not found in metadata, skipping metadata update`);
       }
@@ -374,14 +335,6 @@ const deleteObjects = (minioClient) => async (req, res) => {
       // If metadata file doesn't exist or can't be read, log it but don't fail the deletion
       debugUpload(`[albums.js] Metadata update failed (non-critical): ${metadataError.message}`);
     }
-
-    debugUpload(`[albums.js] Successfully deleted object:`, {
-      bucket: config.minio.bucketName,
-      object: objectName,
-      objectPath: objectPath,
-      user: req.user?.username || "admin",
-      timestamp: new Date().toISOString(),
-    });
 
     res.status(200).json({
       success: true,
@@ -393,7 +346,6 @@ const deleteObjects = (minioClient) => async (req, res) => {
       }
     });
   } catch (error) {
-    debugUpload(`[albums.js] Delete error:`, error);
     res.status(500).json({
       success: false,
       error: "Failed to delete object. " + error.message,
@@ -414,8 +366,6 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
       });
     }
 
-    console.log(`[albums.js] Updating metadata for: ${folderPath}/${objectName}`);
-    console.log(metadata.coordinates)
     const metadataService = new MetadataService(minioClient);
 
     await metadataService.getAddressFromCoordinates(metadata.coordinates)
@@ -469,8 +419,6 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
           "Content-Type": "application/json",
         }
       );
-
-      console.log(`[albums.js] Successfully updated metadata for ${objectName}`);
 
       res.status(200).json({
         success: true,

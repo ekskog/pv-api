@@ -1,15 +1,5 @@
-const debug = require("debug");
 const AvifConverterService = require("./avif-converter-service");
 const MetadataService = require("./metadata-service");
-
-// Debug namespaces
-const debugUpload = debug("photovault:upload");
-const debugImage = debug("photovault:upload:image");
-const debugVideo = debug("photovault:upload:video");
-const debugBatch = debug("photovault:upload:batch");
-const debugMetadata = debug("photovault:upload:metadata");
-const debugMemory = debug("photovault:upload:memory");
-const debugRegular = debug("photovault:upload:regular");
 
 // Upload Service - Handles file uploads with AVIF conversion (NO FALLBACKS)
 //
@@ -46,7 +36,7 @@ class UploadService {
 
         // Process image file
         uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-        debugMetadata(`[upload-service.js LINE 49]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}\nuploadresult: ${JSON.stringify(uploadResult)}`);
+        // debugMetadata(`[upload-service.js LINE 49]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}\nuploadresult: ${JSON.stringify(uploadResult)}`);
 
           // Update JSON metadata with already extracted data (blocking)
           if (uploadResult && extractedMetadata) {
@@ -57,7 +47,7 @@ class UploadService {
                 extractedMetadata,
                 file.originalname
               );
-              debugMetadata(`[upload-service.js LINE 60]: Updated JSON metadata for ${file.originalname}`);
+              // debugMetadata(`[upload-service.js LINE 60]: Updated JSON metadata for ${file.originalname}`);
             } catch (error) {
               throw new Error(`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
             }
@@ -67,22 +57,22 @@ class UploadService {
       }
     } catch (error) {
       // NO FALLBACK - If AVIF conversion fails, fail the entire upload
-      debugUpload(`[upload-service.js LINE 70]: AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
+      // debugUpload(`[upload-service.js LINE 70]: AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
       throw error;
     } finally {
       // Force garbage collection if available
       if (global.gc) {
         global.gc();
         const memAfterGC = process.memoryUsage();
-        debugMemory(
-          `[upload-service.js LINE 78]: Memory after GC: ${(
-            memAfterGC.heapUsed /
-            1024 /
-            1024
-          ).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(
-            2
-          )}MB RSS`
-        );
+        // debugMemory(
+        //   `[upload-service.js LINE 78]: Memory after GC: ${(
+        //     memAfterGC.heapUsed /
+        //     1024 /
+        //     1024
+        //   ).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(
+        //     2
+        //   )}MB RSS`
+        // );
       }
     }
   }
@@ -106,7 +96,7 @@ class UploadService {
       );
 
       // Process the converted file from microservice
-      debugImage(`[upload-service.js LINE 109: Processing converted file from microservice for ${file.originalname}`);
+      // debugImage(`[upload-service.js LINE 109: Processing converted file from microservice for ${file.originalname}`);
       const convertedFile = this._processConvertedFileFromMicroservice(
         conversionResult.data.files
       );
@@ -138,10 +128,10 @@ class UploadService {
         versionId: uploadInfo.versionId,
       };
 
-      debugImage(`[upload-service.js LINE 146]: Image processing completed for ${file.originalname}`);
+      // debugImage(`[upload-service.js LINE 146]: Image processing completed for ${file.originalname}`);
       return uploadResult;
     } catch (error) {
-      debugImage(`[upload-service.js LINE 149]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
+      // debugImage(`[upload-service.js LINE 149]: ${mimetype} processing failed for ${file.originalname}: ${error.message}`);
       throw error;
     }
   }
@@ -161,9 +151,9 @@ class UploadService {
     const maxSizeMB = 2000; // 2GB limit for videos
     const fileSizeMB = file.size / 1024 / 1024;
     if (fileSizeMB > maxSizeMB) {
-      debugVideo(
-        `[upload-service.js LINE 170]: Video file too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`
-      );
+      // debugVideo(
+      //   `[upload-service.js LINE 170]: Video file too large: ${file.originalname} (${fileSizeMB.toFixed(2)}MB > ${maxSizeMB}MB)`
+      // );
       throw new Error(
         `Video file too large: ${fileSizeMB.toFixed(
           2
@@ -177,7 +167,7 @@ class UploadService {
         ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
         : file.originalname;
 
-      debugVideo(`[upload-service.js LINE 185]: Uploading video to MinIO: ${objectName}`);
+      // debugVideo(`[upload-service.js LINE 185]: Uploading video to MinIO: ${objectName}`);
 
       // Upload directly to MinIO with video-specific metadata
       const uploadInfo = await this.minioClient.putObject(
@@ -207,9 +197,9 @@ class UploadService {
       };
     } catch (error) {
       console.timeEnd(videoTimer);
-      debugVideo(
-        `Video upload failed for ${file.originalname}: ${error.message}`
-      );
+      // debugVideo(
+      //   `Video upload failed for ${file.originalname}: ${error.message}`
+      // );
       throw error;
     }
   }
@@ -228,7 +218,7 @@ class UploadService {
     }
 
     try {
-      debugImage(`[upload-service.js LINE 231]: Processing converted file: ${fileData.filename}`);
+      // debugImage(`[upload-service.js LINE 231]: Processing converted file: ${fileData.filename}`);
       
       // Decode base64 content back to buffer
       const fileBuffer = Buffer.from(fileData.content, "base64");
@@ -240,15 +230,15 @@ class UploadService {
         mimetype: fileData.mimetype || "image/avif",
       };
 
-      debugImage(
-        `[upload-service.js LINE 247]: Processed converted file: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
-      );
+      // debugImage(
+      //   `[upload-service.js LINE 247]: Processed converted file: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
+      // );
       
       return convertedFile;
     } catch (error) {
-      debugImage(
-        `[upload-service.js LINE 251]: Failed to process file ${fileData.filename}: ${error.message}`
-      );
+      // debugImage(
+      //   `[upload-service.js LINE 251]: Failed to process file ${fileData.filename}: ${error.message}`
+      // );
       throw error;
     }
   }
@@ -264,7 +254,7 @@ class UploadService {
       ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
       : file.originalname;
 
-    debugRegular(`[upload-service.js LINE 267]: Target object name: "${objectName}"`);
+    // debugRegular(`[upload-service.js LINE 267]: Target object name: "${objectName}"`);
 
     try {
       const uploadInfo = await this.minioClient.putObject(
@@ -280,9 +270,9 @@ class UploadService {
       );
       
       console.timeEnd(uploadTimer);
-      debugRegular(
-        `[upload-service.js LINE 288]: Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
-      );
+      // debugRegular(
+      //   `[upload-service.js LINE 288]: Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
+      // );
 
       return {
         originalName: file.originalname,
@@ -294,7 +284,7 @@ class UploadService {
       };
     } catch (error) {
       console.timeEnd(uploadTimer);
-      debugRegular(`[upload-service.js LINE 303]: Regular file upload failed for ${file.originalname}: ${error.message}`);
+      // debugRegular(`[upload-service.js LINE 303]: Regular file upload failed for ${file.originalname}: ${error.message}`);
       throw error;
     }
   }
@@ -323,9 +313,9 @@ class UploadService {
         uploadResult
       );
 
-      debugMetadata(
-        `[upload-service.js LINE 333]: Successfully updated JSON metadata for ${uploadResult.objectName}`
-      );
+      // debugMetadata(
+      //   `[upload-service.js LINE 333]: Successfully updated JSON metadata for ${uploadResult.objectName}`
+      // );
     } catch (error) {
       throw new Error(
         ` LINE 337 - Failed to update JSON metadata for ${uploadResult.objectName}: ${error.message}`
@@ -337,9 +327,9 @@ class UploadService {
    * Process multiple files in batch
    */
   async processMultipleFiles(files, bucketName, folderPath = "") {
-    debugBatch(
-      `[upload-service.js LINE 347]: Starting batch processing of ${files.length} files`
-    );
+    // debugBatch(
+    //   `[upload-service.js LINE 347]: Starting batch processing of ${files.length} files`
+    // );
     const allResults = [];
     const errors = [];
 
@@ -353,13 +343,13 @@ class UploadService {
           folderPath
         );
         allResults.push(result);
-        debugBatch(
-          `[upload-service.js LINE 363]: Successfully processed file ${i + 1}/${files.length}: ${file.originalname}`
-        );
+        // debugBatch(
+        //   `[upload-service.js LINE 363]: Successfully processed file ${i + 1}/${files.length}: ${file.originalname}`
+        // );
       } catch (error) {
-        debugBatch(
-          `[upload-service.js LINE 367]: Failed to process file ${i + 1}/${files.length}: ${file.originalname} - ${error.message}`
-        );
+        // debugBatch(
+        //   `[upload-service.js LINE 367]: Failed to process file ${i + 1}/${files.length}: ${file.originalname} - ${error.message}`
+        // );
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -367,12 +357,12 @@ class UploadService {
       }
     }
 
-    debugBatch(
-      `[upload-service.js LINE 377]: Batch processing completed - Success: ${allResults.length} files, Errors: ${errors.length} files`
-    );
+    // debugBatch(
+    //   `[upload-service.js LINE 377]: Batch processing completed - Success: ${allResults.length} files, Errors: ${errors.length} files`
+    // );
     
     if (errors.length > 0) {
-      debugBatch(`[upload-service.js LINE 381]: Failed files:`, errors.map(e => `${e.filename}: ${e.error}`));
+      // debugBatch(`[upload-service.js LINE 381]: Failed files:`, errors.map(e => `${e.filename}: ${e.error}`));
     }
     
     return { results: allResults, errors };

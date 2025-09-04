@@ -7,30 +7,30 @@ const database = require("../services/database-service");
 
 // Health check route
 const healthCheck = (minioClient) => async (req, res) => {
-  debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
+  // debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
 
   let minioHealthy = false;
   let converterHealthy = false;
   let databaseHealthy = false;
 
   // MinIO check
-    try {
-      minioHealthy = await checkMinioHealth(minioClient);
-      console.log('✅ MinIO is up and reachable');
-    } catch (err) {
-      console.error('❌ MinIO is down or unreachable:', err.message);
-    };
+  try {
+    minioHealthy = await checkMinioHealth(minioClient);
+    // console.log('✅ MinIO is up and reachable');
+  } catch (err) {
+    // console.error('❌ MinIO is down or unreachable:', err.message);
+  }
 
   // Database check
   try {
     databaseHealthy = await database.isHealthy();
     if (databaseHealthy) {
-      console.log('✅ Database is up and reachable');
+      // console.log('✅ Database is up and reachable');
     } else {
-      console.log('❌ Database is down or unreachable');
+      // console.log('❌ Database is down or unreachable');
     }
   } catch (err) {
-    console.error('❌ Database health check failed:', err.message);
+    // console.error('❌ Database health check failed:', err.message);
   }
 
   // Converter check

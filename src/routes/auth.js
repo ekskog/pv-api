@@ -6,7 +6,7 @@ const router = express.Router()
 const database = require('../services/database-service');
 const debug = require("debug");
 const debugAuth = debug("photovault:auth");
-debugAuth('Auth middleware initialized');
+// debugAuth('Auth middleware initialized');
 const config = require('../config'); // defaults to ./config/index.js
 
 // Function to verify Turnstile token with Cloudflare
@@ -26,19 +26,19 @@ async function verifyTurnstileToken(token, remoteip) {
     })
 
     const data = await response.json()
-    debugAuth(`[auth.js]: Turnstile verification result: ${JSON.stringify(data)}`)
+    // debugAuth(`[auth.js]: Turnstile verification result: ${JSON.stringify(data)}`)
     
     return data.success === true
   } catch (error) {
-    debugAuth(`[auth.js]: Turnstile verification error: ${error.message}`)
+    // debugAuth(`[auth.js]: Turnstile verification error: ${error.message}`)
     return false
   }
 }
 
 // POST /auth/login - User login (UPDATED with Turnstile)
 router.post('/login', async (req, res) => {
-  debugAuth(`[auth.js - line 14]: Login request received: ${JSON.stringify(req.body)}`);
-  console.log('/auth/login')
+  // debugAuth(`[auth.js - line 14]: Login request received: ${JSON.stringify(req.body)}`);
+  // console.log('/auth/login')
   try {
     const { username, password, turnstileToken } = req.body // Added turnstileToken
 
@@ -69,14 +69,14 @@ router.post('/login', async (req, res) => {
     const isValidTurnstile = await verifyTurnstileToken(turnstileToken, clientIP)
     
     if (!isValidTurnstile) {
-      debugAuth(`[auth.js]: Turnstile verification failed for IP: ${clientIP}`)
+      // debugAuth(`[auth.js]: Turnstile verification failed for IP: ${clientIP}`)
       return res.status(400).json({
         success: false,
         error: 'Security verification failed. Please try again.'
       })
     }
 
-    debugAuth(`[auth.js]: Turnstile verification passed for user: ${username}`)
+    // debugAuth(`[auth.js]: Turnstile verification passed for user: ${username}`)
 
     // Authenticate user (your existing logic)
     const user = await AuthService.authenticateUser(username, password)
