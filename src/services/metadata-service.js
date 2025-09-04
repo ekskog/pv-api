@@ -22,7 +22,7 @@ class MetadataService {
    */
   async extractEssentialMetadata(buffer, filename) {
     try {
-      debugMetadata(`[(25)] > Extracting metadata from: ${filename}`);
+      //debugMetadata(`[(25)] > Extracting metadata from: ${filename}`);
 
       // Extract comprehensive metadata in one pass
       const exifData = await exifr.parse(buffer, {
@@ -253,7 +253,7 @@ class MetadataService {
 
     const apiKey = this.mapboxToken;
     if (!apiKey) {
-      debugGps(`[metadata-service.js LINE 257]:  MAPBOX_TOKEN not found in environment variables`);
+      //debugGps(`[metadata-service.js LINE 257]:  MAPBOX_TOKEN not found in environment variables`);
       return "API key not configured";
     }
 
@@ -261,7 +261,7 @@ class MetadataService {
       const [lat, lng] = coordinates.split(",");
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${apiKey}&types=address,poi,place`;
 
-      debugGps(` [metadata-service.js LINE 267]:    Coordinates: ${coordinates}`);
+      //debugGps(` [metadata-service.js LINE 267]:    Coordinates: ${coordinates}`);
 
       //const fetch = (await import('node-fetch')).default;
       //const response = await fetch(url);
@@ -269,7 +269,7 @@ class MetadataService {
       const response = await fetch(url, { timeout: 5000 });
 
       if (!response.ok) {
-        debugGps(`[(277)]: Mapbox API error: ${response.status} ${response.statusText}`);
+        //debugGps(`[(277)]: Mapbox API error: ${response.status} ${response.statusText}`);
         return `API error: ${response.status}`;
       }
 
@@ -279,15 +279,14 @@ class MetadataService {
         const feature = data.features[0];
         const address =
           feature.place_name || feature.text || "Address not found";
-        debugGps(` [(282)]:  Found address: ${address}`);
+        //debugGps(` [(282)]:  Found address: ${address}`);
         return address;
       } else {
-        debugGps(`[(285)]:  No features found in Mapbox response`
-        );
+        //debugGps(`[(285)]:  No features found in Mapbox response`;
         return "Address not found";
       }
     } catch (error) {
-      debugGps(` [(3290)]: Error getting address for ${coordinates}: ${error.message}`);
+      //debugGps(` [(3290)]: Error getting address for ${coordinates}: ${error.message}`);
       return "Address lookup failed";
     }
   }
@@ -299,14 +298,14 @@ class MetadataService {
     const folderName = objectName.split("/")[0];
     if (!folderName || folderName === objectName) return; // Skip root uploads
     const jsonFileName = `${folderName}/${folderName}.json`;
-    debugMetadata(`[(302)]: Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`);
+    //debugMetadata(`[(302)]: Bucket: ${bucketName}, Folder: ${folderName}, JSON: ${jsonFileName}`);
 
     try {
       let folderData;
       const chunks = [];
 
       try {
-        debugMetadata(`[(309)]: Attempting to retrieve existing metadata from ${jsonFileName}...`);
+        //debugMetadata(`[(309)]: Attempting to retrieve existing metadata from ${jsonFileName}...`);
         const stream = await this.minioClient.getObject(
           bucketName,
           jsonFileName
@@ -314,9 +313,9 @@ class MetadataService {
         for await (const chunk of stream) chunks.push(chunk);
         const rawData = Buffer.concat(chunks).toString();
         folderData = JSON.parse(rawData);
-        debugMetadata(`[(334)]: Parsed existing metadata successfully.`);
+        //debugMetadata(`[(334)]: Parsed existing metadata successfully.`);
       } catch (err) {
-        debugMetadata(`[(335)]: Could not retrieve or parse existing metadata. Reason: ${err.message}`);
+        //debugMetadata(`[(335)]: Could not retrieve or parse existing metadata. Reason: ${err.message}`);
         folderData = {
           folderName,
           media: [],
@@ -349,7 +348,7 @@ class MetadataService {
 
       return true;
     } catch (error) {
-      debugMetadata(`[(376)]: Failed to update folder metadata: ${error.message}`);
+      //debugMetadata(`[(376)]: Failed to update folder metadata: ${error.message}`);
       return false;
     }
   }

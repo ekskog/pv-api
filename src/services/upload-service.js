@@ -37,7 +37,7 @@ class UploadService {
           file.buffer,
           file.originalname
         );
-        debugUpload(`[(40)]: Extracted metadata for ${file.originalname}}`);
+        //debugUpload(`[(40)]: Extracted metadata for ${file.originalname}}`);
 
         // Process image file
         uploadResult = await this.processImageFile(
@@ -46,7 +46,7 @@ class UploadService {
           folderPath,
           mimetype
         );
-        debugUpload(`[upload-service.js (41)]: uploadresult: ${JSON.stringify(uploadResult)}`);
+        //debugUpload(`[upload-service.js (41)]: uploadresult: ${JSON.stringify(uploadResult)}`);
 
         // Update JSON metadata with already extracted data (blocking)
         if (uploadResult && extractedMetadata) {
@@ -57,7 +57,7 @@ class UploadService {
               extractedMetadata,
               file.originalname
             );
-            debugUpload(`[upload-service.js (51)]: Updated JSON metadata for ${file.originalname}`);
+            //debugUpload(`[upload-service.js (51)]: Updated JSON metadata for ${file.originalname}`);
           } catch (error) {
             throw new Error(
               `Failed to update JSON metadata for ${file.originalname}: ${error.message}`
@@ -76,15 +76,7 @@ class UploadService {
       if (global.gc) {
         global.gc();
         const memAfterGC = process.memoryUsage();
-        debugUpload(
-          `[upload-service.js LINE 78]: Memory after GC: ${(
-            memAfterGC.heapUsed /
-            1024 /
-            1024
-          ).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(
-            2
-          )}MB RSS`
-        );
+        //debugUpload(`[(78)]: Memory after GC: ${( memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
       }
     }
   }
@@ -110,7 +102,7 @@ class UploadService {
       // Process the converted file from microservice
       // debugImage(`[upload-service.js LINE 109: Processing converted file from microservice for ${file.originalname}`);
       const convertedFile = this._processConvertedFileFromMicroservice(conversionResult.data.files);
-      debugUpload(`[(113)]: convertedFile: ${JSON.stringify(convertedFile)}`);
+      //debugUpload(`[(113)]: convertedFile: ${JSON.stringify(convertedFile)}`);
 
       // Upload the converted file to MinIO
       const objectName = folderPath

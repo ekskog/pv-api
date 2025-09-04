@@ -32,9 +32,7 @@ try {
     secretKey: config.minio.secretKey,
   });
 } catch (err) {
-  debugServer(
-    `[server.js LINE 39]: MinIO client initialization error: ${err.message}`
-  );
+  //debugServer(`[server.js LINE 39]: MinIO client initialization error: ${err.message}`);
   minioClient = null;
 }
 const UploadService = require("./services/upload-service");
@@ -54,7 +52,7 @@ const sseConnections = new Map();
 const sendSSEEvent = (jobId, eventType, data = {}) => {
   const connection = sseConnections.get(jobId);
   if (!connection) {
-    debugSSE(`[server.js (58)] No connection found for job ${jobId}`);
+    //debugSSE(`[server.js (58)] No connection found for job ${jobId}`);
     return;
   }
 
@@ -68,7 +66,7 @@ const sendSSEEvent = (jobId, eventType, data = {}) => {
 
   try {
     connection.write(message);
-    debugSSE(`[server.js (72)] Event "${eventType}" sent to job ${jobId}`);
+    //debugSSE(`[server.js (72)] Event "${eventType}" sent to job ${jobId}`);
 
     if (eventType === "complete") {
       // Send final message
@@ -79,7 +77,7 @@ const sendSSEEvent = (jobId, eventType, data = {}) => {
       sseConnections.delete(jobId);
     }
   } catch (error) {
-    debugSSE(`[server.js (83)] Error sending to job ${jobId}: ${error.message}`);
+    //debugSSE(`[server.js (83)] Error sending to job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   }
 };
@@ -100,7 +98,7 @@ async function processFilesInBackground(
       const file = files[i];
 
       try {
-        debugUpload(`[server.js (104)] Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
+        //debugUpload(`[server.js (104)] Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -110,9 +108,9 @@ async function processFilesInBackground(
         );
         uploadResults.push(result);
 
-        debugUpload(`[server.js (114)] Successfully processed: ${file.originalname}`);
+        //debugUpload(`[server.js (114)] Successfully processed: ${file.originalname}`);
       } catch (error) {
-        debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
+        //debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -143,8 +141,7 @@ async function processFilesInBackground(
           failed: errors.length,
           processingTime: processingTime,
         },
-        errors: errors,
-      });
+        errors: errors,});
     } else {
       sendSSEEvent(jobId, "complete", {
         status: "partial",
@@ -160,12 +157,12 @@ async function processFilesInBackground(
 
     // Clean up SSE connections after 30 seconds
     setTimeout(() => {
-      debugSSE(`[server.js (164)] Cleaning up SSE connections for job ${jobId}`);
+      //debugSSE(`[server.js (164)] Cleaning up SSE connections for job ${jobId}`);
       sseConnections.delete(jobId);
     }, 300000);
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    debugUpload(`[server.js (169)] Background processing error after ${errorTime}ms:`,{error: error.message, stack: error.stack});
+    //debugUpload(`[server.js (169)] Background processing error after ${errorTime}ms:`,{error: error.message, stack: error.stack});
 
     // Send error completion message
     sendSSEEvent(jobId, "complete", {
@@ -184,7 +181,7 @@ async function processFilesInBackground(
 // SSE endpoint - for monitoring upload progress
 app.get("/processing-status/:jobId", (req, res) => {
   const jobId = req.params.jobId;
-  debugSSE(`[server.js (206)] Client connecting for job ${jobId}`);
+  //debugSSE(`[server.js (206)] Client connecting for job ${jobId}`);
 
   // Set SSE headers
   res.writeHead(200, {
@@ -198,7 +195,7 @@ app.get("/processing-status/:jobId", (req, res) => {
 
   // Store connection
   sseConnections.set(jobId, res);
-  debugSSE(`[server.js (220)] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
+  //debugSSE(`[server.js (220)] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
 
   // Send initial connection confirmation
   const confirmationData = JSON.stringify({
@@ -208,11 +205,11 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   res.write(`data: ${confirmationData}\n\n`);
-  debugSSE(`[server.js (230)] Sent ${confirmationData} for job ${jobId}`);
+  //debugSSE(`[server.js (230)] Sent ${confirmationData} for job ${jobId}`);
 
   // Handle client disconnect
   req.on("close", () => {
-    debugSSE(`[server.js (234)] Client disconnected for job ${jobId}`);
+    //debugSSE(`[server.js (234)] Client disconnected for job ${jobId}`);
     sseConnections.delete(jobId);
   });
 
@@ -227,25 +224,23 @@ async function startServer() {
     // Initialize database connection
     let connectionPool = await initializeDatabase();
 
-    debugServer(`[server.js] Database initialized successfully`);
+    //debugServer(`[server.js] Database initialized successfully`);
     // Start HTTP server
     app.listen(PORT, () => {
       const k8sService = config.kubernetes.serviceName;
       const k8sNamespace = config.kubernetes.namespace || "photovault";
-      debugServer(`Starting PhotoVault ${new Date()}...`);
-      debugServer(
-        `> PhotoVault API server running on port ${config.server.port}`
-      );
+      //debugServer(`Starting PhotoVault ${new Date()}...`);
+      //debugServer(        `> PhotoVault API server running on port ${config.server.port}`      );
     });
   } catch (error) {
-    debugServer(`[server.js] Failed to start server:`, error.message);
+    //debugServer(`[server.js] Failed to start server:`, error.message);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  debugServer(`[server.js] Shutting down server...`);
+  //debugServer(`[server.js] Shutting down server...`);
   if (config.auth.mode) {
     await database.close();
   }
@@ -263,10 +258,7 @@ async function initializeDatabase() {
   try {
     await database.initialize();
   } catch (error) {
-    debugDB(
-      `[server.js] Database initialization failed:`,
-      error.message
-    );
+    debugDB(`[(262)] Database initialization failed:`, error.message);  
   }
 }
 
