@@ -13,12 +13,11 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const PORT = config.server.port;
+
 // Middleware
 app.use(cors(config.cors));
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
-
-const { authenticateToken, requireRole } = require("./middleware/authMW");
 
 // Import and Initialize services
 const { Client } = require("minio");
