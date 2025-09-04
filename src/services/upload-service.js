@@ -1,5 +1,7 @@
 const AvifConverterService = require("./avif-converter-service");
 const MetadataService = require("./metadata-service");
+const debug = require("debug");
+const debugUpload = debug("photovault:upload-service");
 
 // Upload Service - Handles file uploads with AVIF conversion (NO FALLBACKS)
 //
@@ -30,28 +32,42 @@ class UploadService {
 
     try {
       if (mimetype === "image/heic" || mimetype === "image/jpeg") {
-       
         // Extract metadata first
-        extractedMetadata = await this.metadataService.extractEssentialMetadata(file.buffer, file.originalname);
+        extractedMetadata = await this.metadataService.extractEssentialMetadata(
+          file.buffer,
+          file.originalname
+        );
+        debugUpload(
+          `[upload-service.js (40)]: Extracted metadata for ${
+            file.originalname
+          }: ${JSON.stringify(extractedMetadata)}}`
+        );
 
         // Process image file
-        uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-        // debugMetadata(`[upload-service.js LINE 49]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}\nuploadresult: ${JSON.stringify(uploadResult)}`);
+        uploadResult = await this.processImageFile(
+          file,
+          bucketName,
+          folderPath,
+          mimetype
+        );
+        debugUpload(`[upload-service.js (41)]: uploadresult: ${JSON.stringify(uploadResult)}`);
 
-          // Update JSON metadata with already extracted data (blocking)
-          if (uploadResult && extractedMetadata) {
-            try {
-              await this.updateJsonMetadataAsync(
-                bucketName,
-                uploadResult,
-                extractedMetadata,
-                file.originalname
-              );
-              // debugMetadata(`[upload-service.js LINE 60]: Updated JSON metadata for ${file.originalname}`);
-            } catch (error) {
-              throw new Error(`Failed to update JSON metadata for ${file.originalname}: ${error.message}`);
-            }
+        // Update JSON metadata with already extracted data (blocking)
+        if (uploadResult && extractedMetadata) {
+          try {
+            await this.updateJsonMetadataAsync(
+              bucketName,
+              uploadResult,
+              extractedMetadata,
+              file.originalname
+            );
+            debugUpload(`[upload-service.js (51)]: Updated JSON metadata for ${file.originalname}`);
+          } catch (error) {
+            throw new Error(
+              `Failed to update JSON metadata for ${file.originalname}: ${error.message}`
+            );
           }
+        }
 
         return uploadResult;
       }
@@ -64,15 +80,15 @@ class UploadService {
       if (global.gc) {
         global.gc();
         const memAfterGC = process.memoryUsage();
-        // debugMemory(
-        //   `[upload-service.js LINE 78]: Memory after GC: ${(
-        //     memAfterGC.heapUsed /
-        //     1024 /
-        //     1024
-        //   ).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(
-        //     2
-        //   )}MB RSS`
-        // );
+        debugUpload(
+          `[upload-service.js LINE 78]: Memory after GC: ${(
+            memAfterGC.heapUsed /
+            1024 /
+            1024
+          ).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(
+            2
+          )}MB RSS`
+        );
       }
     }
   }
@@ -86,7 +102,7 @@ class UploadService {
    * @returns {Object} Upload result (single object)
    */
   async processImageFile(file, bucketName, folderPath, mimetype) {
-    const uploadTimer = `${mimetype}-upload-${file.originalname}`;    
+    const uploadTimer = `${mimetype}-upload-${file.originalname}`;
     try {
       // Convert using microservice
       const conversionResult = await this.avifConverter.convertImage(
@@ -145,8 +161,7 @@ class UploadService {
    */
   async processVideoFile(file, bucketName, folderPath) {
     const videoTimer = `Video-upload-${file.originalname}`;
-    console.time(videoTimer);
-    
+
     // Check file size limit for videos (larger than images)
     const maxSizeMB = 2000; // 2GB limit for videos
     const fileSizeMB = file.size / 1024 / 1024;
@@ -212,14 +227,14 @@ class UploadService {
   _processConvertedFileFromMicroservice(microserviceFiles) {
     // Take the first (and presumably only) file from the microservice response
     const fileData = microserviceFiles[0];
-    
+
     if (!fileData) {
       throw new Error("No converted file received from microservice");
     }
 
     try {
       // debugImage(`[upload-service.js LINE 231]: Processing converted file: ${fileData.filename}`);
-      
+
       // Decode base64 content back to buffer
       const fileBuffer = Buffer.from(fileData.content, "base64");
 
@@ -233,7 +248,7 @@ class UploadService {
       // debugImage(
       //   `[upload-service.js LINE 247]: Processed converted file: ${fileData.filename} (${(fileBuffer.length / 1024).toFixed(2)}KB)`
       // );
-      
+
       return convertedFile;
     } catch (error) {
       // debugImage(
@@ -249,8 +264,8 @@ class UploadService {
   async uploadRegularFile(file, bucketName, folderPath) {
     const uploadTimer = `Regular-upload-${file.originalname}`;
     console.time(uploadTimer);
-    
-     const objectName = folderPath
+
+    const objectName = folderPath
       ? `${folderPath.replace(/\/$/, "")}/${file.originalname}`
       : file.originalname;
 
@@ -268,7 +283,7 @@ class UploadService {
           "X-Amz-Meta-Upload-Date": new Date().toISOString(),
         }
       );
-      
+
       console.timeEnd(uploadTimer);
       // debugRegular(
       //   `[upload-service.js LINE 288]: Successfully uploaded: ${objectName} (ETag: ${uploadInfo.etag})`
@@ -302,8 +317,6 @@ class UploadService {
     extractedMetadata,
     originalFilename
   ) {
-    
-    
     try {
       // Use the metadata service to update the JSON file with extracted data
       await this.metadataService.updateFolderMetadata(
@@ -335,7 +348,7 @@ class UploadService {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      
+
       try {
         const result = await this.processAndUploadFile(
           file,
@@ -360,11 +373,11 @@ class UploadService {
     // debugBatch(
     //   `[upload-service.js LINE 377]: Batch processing completed - Success: ${allResults.length} files, Errors: ${errors.length} files`
     // );
-    
+
     if (errors.length > 0) {
       // debugBatch(`[upload-service.js LINE 381]: Failed files:`, errors.map(e => `${e.filename}: ${e.error}`));
     }
-    
+
     return { results: allResults, errors };
   }
 }
