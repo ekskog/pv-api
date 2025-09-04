@@ -55,7 +55,7 @@ const sseConnections = new Map();
 const sendSSEEvent = (jobId, eventType, data = {}) => {
   const connection = sseConnections.get(jobId);
   if (!connection) {
-    debugSSE(`[server.js] No connection found for job ${jobId}`);
+    debugSSE(`[server.js (58)] No connection found for job ${jobId}`);
     return;
   }
 
@@ -69,7 +69,7 @@ const sendSSEEvent = (jobId, eventType, data = {}) => {
 
   try {
     connection.write(message);
-    debugSSE(`[server.js] Event "${eventType}" sent to job ${jobId}`);
+    debugSSE(`[server.js (72)] Event "${eventType}" sent to job ${jobId}`);
 
     if (eventType === "complete") {
       // Send final message
@@ -80,7 +80,7 @@ const sendSSEEvent = (jobId, eventType, data = {}) => {
       sseConnections.delete(jobId);
     }
   } catch (error) {
-    debugSSE(`[server.js] Error sending to job ${jobId}: ${error.message}`);
+    debugSSE(`[server.js (83)] Error sending to job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   }
 };
@@ -101,11 +101,7 @@ async function processFilesInBackground(
       const file = files[i];
 
       try {
-        debugUpload(
-          `[server.js] Processing file ${i + 1}: ${
-            file.originalname
-          } >> ${file.mimetype}`
-        );
+        debugUpload(`[server.js (104)] Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -115,13 +111,9 @@ async function processFilesInBackground(
         );
         uploadResults.push(result);
 
-        debugUpload(
-          `[server.js] Successfully processed: ${file.originalname}`
-        );
+        debugUpload(`[server.js (114)] Successfully processed: ${file.originalname}`);
       } catch (error) {
-        debugUpload(
-          `[server.js] Error processing file ${file.originalname}: ${error.message}`
-        );
+        debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -130,9 +122,7 @@ async function processFilesInBackground(
     }
 
     const processingTime = Date.now() - startTime;
-    debugUpload(
-      `[server.js] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`
-    );
+    debugUpload(`[server.js (125)] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
 
     // Send single completion message
     if (errors.length === 0) {
@@ -171,20 +161,12 @@ async function processFilesInBackground(
 
     // Clean up SSE connections after 30 seconds
     setTimeout(() => {
-      debugUpload(
-        `[server.js] Cleaning up SSE connections for job ${jobId}`
-      );
+      debugSSE(`[server.js (164)] Cleaning up SSE connections for job ${jobId}`);
       sseConnections.delete(jobId);
     }, 300000);
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    debugUpload(
-      `[server.js] Background processing error after ${errorTime}ms:`,
-      {
-        error: error.message,
-        stack: error.stack,
-      }
-    );
+    debugUpload(`[server.js (169)] Background processing error after ${errorTime}ms:`,{error: error.message, stack: error.stack});
 
     // Send error completion message
     sendSSEEvent(jobId, "complete", {
@@ -203,9 +185,7 @@ async function processFilesInBackground(
 // SSE endpoint - for monitoring upload progress
 app.get("/processing-status/:jobId", (req, res) => {
   const jobId = req.params.jobId;
-  debugSSE(
-    `[server.js] ${new Date().toISOString()} Client connecting for job ${jobId}`
-  );
+  debugSSE(`[server.js (206)] Client connecting for job ${jobId}`);
 
   // Set SSE headers
   res.writeHead(200, {
@@ -219,11 +199,7 @@ app.get("/processing-status/:jobId", (req, res) => {
 
   // Store connection
   sseConnections.set(jobId, res);
-  debugSSE(
-    `[server.js] ${new Date().toISOString()} Connection stored for job ${jobId}. Total connections: ${
-      sseConnections.size
-    }`
-  );
+  debugSSE(`[server.js (220)] Connection stored for job ${jobId}. Total connections: ${sseConnections.size}`);
 
   // Send initial connection confirmation
   const confirmationData = JSON.stringify({
@@ -233,15 +209,11 @@ app.get("/processing-status/:jobId", (req, res) => {
   });
 
   res.write(`data: ${confirmationData}\n\n`);
-  debugSSE(
-    `[server.js] ${new Date().toISOString()} Sent ${confirmationData} for job ${jobId}`
-  );
+  debugSSE(`[server.js (230)] Sent ${confirmationData} for job ${jobId}`);
 
   // Handle client disconnect
   req.on("close", () => {
-    debugSSE(
-      `[server.js] ${new Date().toISOString()} Client disconnected for job ${jobId}`
-    );
+    debugSSE(`[server.js (234)] Client disconnected for job ${jobId}`);
     sseConnections.delete(jobId);
   });
 
