@@ -38,7 +38,6 @@ async function verifyTurnstileToken(token, remoteip) {
 // POST /auth/login - User login (UPDATED with Turnstile)
 router.post('/login', async (req, res) => {
   // debugAuth(`[auth.js - line 14]: Login request received: ${JSON.stringify(req.body)}`);
-  // console.log('/auth/login')
   try {
     const { username, password, turnstileToken } = req.body // Added turnstileToken
 

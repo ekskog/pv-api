@@ -370,7 +370,6 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
 
     await metadataService.getAddressFromCoordinates(metadata.coordinates)
       .then(address => {
-        console.log(`Address found: ${address}`);
       })
       .catch(err => {
         console.error(`Error finding address: ${err}`);

@@ -29,6 +29,7 @@ class UploadService {
     let mimetype = file.mimetype;
     let extractedMetadata = null;
     let uploadResult = null;
+    debugUpload(`[(32)]: Processing file: ${file.originalname} with mimetype: ${mimetype}`);
 
     try {
       if (mimetype === "image/heic" || mimetype === "image/jpeg") {
@@ -69,14 +70,14 @@ class UploadService {
       }
     } catch (error) {
       // NO FALLBACK - If AVIF conversion fails, fail the entire upload
-      // debugUpload(`[upload-service.js LINE 70]: AVIF conversion failed for ${file.originalname} - NOT uploading original file as per requirements`);
+      debugUpload(`[(70)]: AVIF conversion failed for ${file.originalname} - NOT uploading`);
       throw error;
     } finally {
       // Force garbage collection if available
       if (global.gc) {
         global.gc();
         const memAfterGC = process.memoryUsage();
-        //debugUpload(`[(78)]: Memory after GC: ${( memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
+        debugUpload(`[(80)]: Memory after GC: ${( memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
       }
     }
   }

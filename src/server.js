@@ -98,7 +98,7 @@ async function processFilesInBackground(
       const file = files[i];
 
       try {
-        //debugUpload(`[server.js (104)] Processing file ${i + 1}: ${file.originalname} >> ${file.mimetype}`);
+        debugUpload(`[(101)] Processing file ${i + 1} of : ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
