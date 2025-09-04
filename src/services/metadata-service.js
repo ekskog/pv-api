@@ -22,7 +22,7 @@ class MetadataService {
    */
   async extractEssentialMetadata(buffer, filename) {
     try {
-      debugMetadata(`[(25)] > Extracting metadata from: ${filename}`);
+      //debugMetadata(`[(25)] > Extracting metadata from: ${filename}`);
 
       // Extract comprehensive metadata in one pass
       const exifData = await exifr.parse(buffer, {

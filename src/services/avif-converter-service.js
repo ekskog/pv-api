@@ -16,7 +16,6 @@ class AvifConverterService {
    */
   async checkHealth() {
     try {
-      
       const response = await fetch(`${this.converterUrl}/health`, {
         method: 'GET',
         timeout: 60000 // 1 minute timeout for health checks
@@ -50,7 +49,7 @@ class AvifConverterService {
  */
 async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
     try {
-      debugConverter(`[(53)] Converting image: ${originalName} (${mimeType})`);
+      //debugConverter(`[(53)] Converting image: ${originalName} (${mimeType})`);
       const endpoint = '/convert';
       const formData = new FormData();
       const blob = new Blob([fileBuffer], { type: mimeType });
@@ -62,7 +61,7 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
         body: formData,
         timeout: this.converterTimeout
       });
-      debugConverter(`[(65)] Received ${response.status} | ${response.statusText} from converter for ${originalName}`);
+      //debugConverter(`[(65)] Received ${response.status} | ${response.statusText} from converter for ${originalName}`);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);

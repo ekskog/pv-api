@@ -27,7 +27,7 @@ class UploadService {
    */
   async processAndUploadFile(file, bucketName, folderPath = "") {
     const { mimetype, originalname, buffer } = file;
-    debugUpload(`[(30)]: Processing file: ${originalname} with mimetype: ${mimetype}`);
+    //debugUpload(`[(30)]: Processing file: ${originalname} with mimetype: ${mimetype}`);
 
     let extractedMetadata = null;
     let uploadResult = null;
@@ -48,10 +48,10 @@ class UploadService {
       if (uploadResult && extractedMetadata) {
         this.updateJsonMetadataAsync(bucketName, uploadResult, extractedMetadata, originalname)
           .then(() => {
-            debugUpload(`[upload-service.js (52)]: Updated JSON metadata for ${originalname}`);
+           // debugUpload(`[upload-service.js (52)]: Updated JSON metadata for ${originalname}`);
           })
           .catch((err) => {
-            debugUpload(`[(55)]: Failed to update JSON metadata for ${originalname}: ${err.message}`);
+            //debugUpload(`[(55)]: Failed to update JSON metadata for ${originalname}: ${err.message}`);
           });
       }
 
@@ -62,7 +62,7 @@ class UploadService {
       if (global.gc) {
         global.gc();
         const memAfterGC = process.memoryUsage();
-        debugUpload(`[(69)]: Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
+        //debugUpload(`[(69)]: Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
       }
     }
   }
