@@ -62,20 +62,17 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
         body: formData,
         timeout: this.converterTimeout
       });
-
+      debugConverter(`[(65)] Received ${response.status} | ${response.statusText} from converter for ${originalName}`);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Conversion failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const responseData = await response.json();
+      debugConverter(`[(71)] Converter response data for ${originalName}: ${JSON.stringify(responseData)}`);  
 
       if (!responseData.success) {
         throw new Error(`Conversion failed: ${responseData.error || 'Unknown error'}`);
-      }
-
-      if (!responseData.data || !responseData.data.fullSize) {
-        throw new Error(`Conversion failed: Missing fullSize in response data`);
       }
 
       const baseName = originalName.replace(/\.(jpg|jpeg|heic)$/i, '');
