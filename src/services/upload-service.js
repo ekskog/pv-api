@@ -43,7 +43,6 @@ class UploadService {
 
       // Step 2: Convert and upload image
       uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-      debugUpload(`[upload-service.js (46)]: uploadresult: ${JSON.stringify(uploadResult)}`);
 
       // Step 3: Try updating JSON metadata (non-blocking)
       if (uploadResult && extractedMetadata) {
@@ -58,8 +57,6 @@ class UploadService {
 
       return uploadResult;
     } catch (error) {
-      debugUpload(`[(61)]: AVIF conversion failed for ${originalname} - NOT uploading`);
-      debugUpload(`[(62)]: Error: ${error.message}`);
       throw new Error(`Failed processing ${originalname}: ${error.message}`);
     } finally {
       if (global.gc) {

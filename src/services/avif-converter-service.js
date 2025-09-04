@@ -69,8 +69,6 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       }
 
       const responseData = await response.json();
-      debugConverter(`[(72)] Converter response data for ${originalName}: ${(responseData.success)}`);  
-      debugConverter(`[(73)] ${responseData.data.filename} size: ${responseData.data.size} bytes`);
 
       if (!responseData.success) {
         throw new Error(`Conversion failed: ${responseData.error || 'Unknown error'}`);
@@ -94,7 +92,6 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       };
 
     } catch (error) {
-      debugConverter(`[(97)] Conversion error for ${originalName}: ${error.message}`);
       return {
         success: false,
         error: error.message
