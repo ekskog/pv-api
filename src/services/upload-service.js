@@ -45,26 +45,31 @@ class UploadService {
       uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
       debugUpload(`[upload-service.js (46)]: uploadresult: ${JSON.stringify(uploadResult)}`);
 
-      // Step 3: Update JSON metadata (blocking)
+      // Step 3: Try updating JSON metadata (non-blocking)
       if (uploadResult && extractedMetadata) {
-        await this.updateJsonMetadataAsync(bucketName, uploadResult, extractedMetadata, originalname);
-        debugUpload(`[upload-service.js (51)]: Updated JSON metadata for ${originalname}`);
+        this.updateJsonMetadataAsync(bucketName, uploadResult, extractedMetadata, originalname)
+          .then(() => {
+            debugUpload(`[upload-service.js (52)]: Updated JSON metadata for ${originalname}`);
+          })
+          .catch((err) => {
+            debugUpload(`[(55)]: Failed to update JSON metadata for ${originalname}: ${err.message}`);
+          });
       }
 
       return uploadResult;
     } catch (error) {
-      debugUpload(`[(56)]: AVIF conversion failed for ${originalname} - NOT uploading`);
-      debugUpload(`[(57)]: Error: ${error.message}`);
+      debugUpload(`[(61)]: AVIF conversion failed for ${originalname} - NOT uploading`);
+      debugUpload(`[(62)]: Error: ${error.message}`);
       throw new Error(`Failed processing ${originalname}: ${error.message}`);
     } finally {
-      // Force garbage collection if available
       if (global.gc) {
         global.gc();
         const memAfterGC = process.memoryUsage();
-        debugUpload(`[(64)]: Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
+        debugUpload(`[(69)]: Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
       }
     }
   }
+
 
   /**
    * Process image files (HEIC or JPEG) - convert using microservice and upload
