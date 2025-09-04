@@ -69,7 +69,8 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       }
 
       const responseData = await response.json();
-      debugConverter(`[(71)] Converter response data for ${originalName}: ${JSON.stringify(responseData)}`);  
+      debugConverter(`[(72)] Converter response data for ${originalName}: ${(responseData.success)}`);  
+      debugConverter(`[(73)] ${responseData.data.filename} size: ${responseData.data.size} bytes`);
 
       if (!responseData.success) {
         throw new Error(`Conversion failed: ${responseData.error || 'Unknown error'}`);
@@ -79,8 +80,8 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       const files = [];
       files.push({
         filename: `${baseName}.avif`,
-        content: responseData.data.fullSize.content,
-        size: responseData.data.fullSize.size,
+        content: responseData.data.content,
+        size: responseData.data.size,
         mimetype: 'image/avif',
         variant: 'full'
       });
