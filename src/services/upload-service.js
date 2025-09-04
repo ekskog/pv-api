@@ -37,9 +37,7 @@ class UploadService {
           file.buffer,
           file.originalname
         );
-        debugUpload(
-          `[upload-service.js (40)]: Extracted metadata for ${file.originalname}: ${JSON.stringify(extractedMetadata)}}`
-        );
+        debugUpload(`[(40)]: Extracted metadata for ${file.originalname}}`);
 
         // Process image file
         uploadResult = await this.processImageFile(
@@ -111,9 +109,8 @@ class UploadService {
 
       // Process the converted file from microservice
       // debugImage(`[upload-service.js LINE 109: Processing converted file from microservice for ${file.originalname}`);
-      const convertedFile = this._processConvertedFileFromMicroservice(
-        conversionResult.data.files
-      );
+      const convertedFile = this._processConvertedFileFromMicroservice(conversionResult.data.files);
+      debugUpload(`[(113)]: convertedFile: ${JSON.stringify(convertedFile)}`);
 
       // Upload the converted file to MinIO
       const objectName = folderPath
