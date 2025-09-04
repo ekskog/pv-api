@@ -94,6 +94,7 @@ async convertImage(fileBuffer, originalName, mimeType, returnContents = true) {
       };
 
     } catch (error) {
+      debugConverter(`[(97)] Conversion error for ${originalName}: ${error.message}`);
       return {
         success: false,
         error: error.message

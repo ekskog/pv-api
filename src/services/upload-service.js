@@ -46,7 +46,7 @@ class UploadService {
           folderPath,
           mimetype
         );
-        //debugUpload(`[upload-service.js (41)]: uploadresult: ${JSON.stringify(uploadResult)}`);
+        debugUpload(`[upload-service.js (49)]: uploadresult: ${JSON.stringify(uploadResult)}`);
 
         // Update JSON metadata with already extracted data (blocking)
         if (uploadResult && extractedMetadata) {
@@ -57,8 +57,9 @@ class UploadService {
               extractedMetadata,
               file.originalname
             );
-            //debugUpload(`[upload-service.js (51)]: Updated JSON metadata for ${file.originalname}`);
+            debugUpload(`[upload-service.js (51)]: Updated JSON metadata for ${file.originalname}`);
           } catch (error) {
+            debugUpload(`[upload-service.js (62)]: Error updating JSON metadata for ${file.originalname}: ${error.message}`);
             throw new Error(
               `Failed to update JSON metadata for ${file.originalname}: ${error.message}`
             );
@@ -68,7 +69,6 @@ class UploadService {
         return uploadResult;
       }
     } catch (error) {
-      // NO FALLBACK - If AVIF conversion fails, fail the entire upload
       debugUpload(`[(70)]: AVIF conversion failed for ${file.originalname} - NOT uploading`);
       throw error;
     } finally {
@@ -98,6 +98,8 @@ class UploadService {
         file.originalname,
         file.mimetype
       );
+
+      console.log(`[(103)]: Conversion result for ${file.originalname}: ${JSON.stringify(conversionResult)}`);
 
       // Process the converted file from microservice
       // debugImage(`[upload-service.js LINE 109: Processing converted file from microservice for ${file.originalname}`);
