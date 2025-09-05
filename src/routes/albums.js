@@ -328,12 +328,12 @@ const deleteObjects = (minioClient) => async (req, res) => {
           }
         );
       } else {
-        debugUpload(`[albums.js] Object ${objectName} not found in metadata, skipping metadata update`);
+        //debugUpload(`[albums.js] Object ${objectName} not found in metadata, skipping metadata update`);
       }
 
     } catch (metadataError) {
       // If metadata file doesn't exist or can't be read, log it but don't fail the deletion
-      debugUpload(`[albums.js] Metadata update failed (non-critical): ${metadataError.message}`);
+      //debugUpload(`[albums.js] Metadata update failed (non-critical): ${metadataError.message}`);
     }
 
     res.status(200).json({

@@ -51,12 +51,10 @@ const healthCheck = (minioClient) => async (req, res) => {
       converterHealthy = true;
       debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
-      debugHealth(
-        `[health.js - line 44]: Converter unhealthy: ${response.status}`
-      );
+      //debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
     }
   } catch (error) {
-    debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
+    //debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
   }
 
   // Compose response
