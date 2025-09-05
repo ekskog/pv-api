@@ -4,7 +4,7 @@
   "description": "PhotoVault API - Backend for photo gallery with MinIO storage",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node --trace-warnings src/server.js",
     "dev": "cross-env DEBUG=photovault:*,-express:*,-nodemon:*,-express-router:* nodemon src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
