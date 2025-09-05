@@ -341,7 +341,7 @@ class Database {
   }
 
   // Update album
-  async updateAlbum(albumId, { name, description }) {
+  async updateAlbumDescription(albumId, { name, description }) {
     const connection = await this.pool.getConnection();
     try {
       // If name is being updated, we might want to update the slug too
@@ -369,6 +369,21 @@ class Database {
       connection.release();
     }
   }
+
+  async incrementFileCounter(increment, albumName) {
+    let updateQuery = " UPDATE albums SET counter = counter + ? WHERE name = ?";
+    const params = [increment, albumName];
+  
+
+    const connection = await this.pool.getConnection();
+    try {
+      const [result] = await connection.execute(updateQuery, params);
+      return result.affectedRows > 0;
+    } finally {
+      connection.release();
+    }
+  }
+
 
   // Delete album
   async deleteAlbum(albumId) {

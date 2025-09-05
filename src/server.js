@@ -108,9 +108,9 @@ async function processFilesInBackground(
         );
         uploadResults.push(result);
 
-        //debugUpload(`[server.js (114)] Successfully processed: ${file.originalname}`);
+        debugUpload(`[server.js (114)] Successfully uploaded: ${file.originalname} to ${folderPath}`);
       } catch (error) {
-        //debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
+        debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -122,8 +122,11 @@ async function processFilesInBackground(
     debugUpload(`[server.js (125)] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
     debugUpload('--------------------------------------------------------------------------\n')
 
+    await database.incrementFileCounter(uploadResults.length, folderPath);
+
     // Send single completion message
     if (errors.length === 0) {
+      // update the file counter on the albums table using database-service
       sendSSEEvent(jobId, "complete", {
         status: "success",
         message: `All ${files.length} files processed successfully!`,
