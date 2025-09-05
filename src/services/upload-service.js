@@ -79,8 +79,6 @@ class UploadService {
         file.mimetype
       );
 
-      debugUpload(`[(103)]: Conversion result for ${file.originalname}: ${JSON.stringify(conversionResult)}`);
-
       const convertedFile = this._processConvertedFileFromMicroservice(conversionResult.data.files);
 
       const objectName = folderPath
