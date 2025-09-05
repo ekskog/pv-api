@@ -49,7 +49,7 @@ const healthCheck = (minioClient) => async (req, res) => {
 
     if (response.ok) {
       converterHealthy = true;
-      debugHealth(`[health.js - line 42]: Converter is healthy`);
+      //debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
       //debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
     }

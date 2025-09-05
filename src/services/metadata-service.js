@@ -188,10 +188,9 @@ class MetadataService {
 
       return metadata;
     } catch (error) {
-      console.error(
-        `Error extracting metadata from ${filename}:`,
-        error.message
-      );
+      console.error(`Error extracting metadata from ${filename}:`,  error.message);
+    }
+  
 
       return {
         sourceImage: filename,
@@ -224,7 +223,6 @@ class MetadataService {
         },
       };
     }
-  }
 
   /**
    * Convert DMS (degrees, minutes, seconds) to decimal degrees
