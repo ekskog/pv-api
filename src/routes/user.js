@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const database = require("../services/database-service");
 
+//TODO : this route should not be just 'user' and it should be protected
 router.get("/", async (req, res) => {
   try {
     const users = await database.getAllUsers();
