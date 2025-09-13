@@ -26,7 +26,7 @@ async function verifyTurnstileToken(token, remoteip) {
     })
 
     const data = await response.json()
-    // debugAuth(`[auth.js]: Turnstile verification result: ${JSON.stringify(data)}`)
+    debugAuth(`[auth.js]: Turnstile verification result: ${JSON.stringify(data)}`)
     
     return data.success === true
   } catch (error) {
@@ -68,7 +68,7 @@ router.post('/login', async (req, res) => {
     const isValidTurnstile = await verifyTurnstileToken(turnstileToken, clientIP)
     
     if (!isValidTurnstile) {
-      // debugAuth(`[auth.js]: Turnstile verification failed for IP: ${clientIP}`)
+      debugAuth(`[auth.js]: Turnstile verification failed for IP: ${clientIP}`)
       return res.status(400).json({
         success: false,
         error: 'Security verification failed. Please try again.'
@@ -81,6 +81,7 @@ router.post('/login', async (req, res) => {
     const user = await AuthService.authenticateUser(username, password)
 
     if (!user) {
+      debugAuth(`[auth.js]: Authentication failed for user: ${username}`)
       return res.status(401).json({
         success: false,
         error: 'Invalid username or password'
