@@ -40,6 +40,7 @@ router.post('/login', async (req, res) => {
   // debugAuth(`[auth.js - line 14]: Login request received: ${JSON.stringify(req.body)}`);
   try {
     const { username, password, turnstileToken } = req.body // Added turnstileToken
+    debugAuth(`[auth.js]: Login attempt with token: ${turnstileToken}`)
 
     // Validate input
     if (!username || !password) {
@@ -60,10 +61,10 @@ router.post('/login', async (req, res) => {
     // Get client IP address
     const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || 
                      req.headers['x-real-ip'] ||
-                     req.connection.remoteAddress || 
+                     req.remoteAddress || 
                      req.socket.remoteAddress ||
-                     (req.connection.socket ? req.connection.socket.remoteAddress : null)
-
+                     (req.socket ? req.socket.remoteAddress : null)
+/*
     // Verify the Turnstile token
     const isValidTurnstile = await verifyTurnstileToken(turnstileToken, clientIP)
     
@@ -76,7 +77,7 @@ router.post('/login', async (req, res) => {
     }
 
     // debugAuth(`[auth.js]: Turnstile verification passed for user: ${username}`)
-
+*/
     // Authenticate user (your existing logic)
     const user = await AuthService.authenticateUser(username, password)
 
