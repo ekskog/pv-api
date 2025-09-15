@@ -71,7 +71,7 @@ class MetadataService {
         sourceImage: filename,
         timestamp: "not found",
         coordinates: "not found",
-        address: "not found",
+        location: "not found",
         camera: {
           make: "not found",
           model: "not found",
@@ -152,7 +152,7 @@ class MetadataService {
           metadata.coordinates = `${lat},${lng}`;
 
           // Get address from coordinates if available
-          metadata.address = await this.getAddressFromCoordinates(
+          metadata.location = await this.getAddressFromCoordinates(
             metadata.coordinates,
             filename
           );
@@ -196,7 +196,7 @@ class MetadataService {
         sourceImage: filename,
         timestamp: "not found",
         coordinates: "not found",
-        address: "not found",
+        location: "not found",
         camera: {
           make: "not found",
           model: "not found",
@@ -274,7 +274,7 @@ class MetadataService {
         const feature = data.features[0];
         const address =
           feature.place_name || feature.text || "Address not found";
-        //debugGps(` [(277)]:  Found address: ${address}`);
+        debugGps(` [(277)]:  Found address: ${address}`);
         return address;
       } else {
         //debugGps(`[(285)]:  No features found in Mapbox response`;
@@ -321,7 +321,7 @@ class MetadataService {
       const imageData = {
         sourceImage: objectName,
         timestamp: metadata.timestamp ?? "not captured",
-        location: metadata.address ?? "not captured",
+        location: metadata.location ?? "not captured",
         coordinates: metadata.coordinates ?? "not captured",
         camera: metadata.camera ?? "not found",
         settings: metadata.settings ?? "not found",
