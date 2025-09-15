@@ -259,15 +259,12 @@ class MetadataService {
       const [lat, lng] = coordinates.split(",");
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${apiKey}&types=address,poi,place`;
 
-      //debugGps(` [metadata-service.js LINE 267]:    Coordinates: ${coordinates}`);
-
-      //const fetch = (await import('node-fetch')).default;
-      //const response = await fetch(url);
+      debugGps(` [metadata-service.js LINE 267]:    Coordinates: ${coordinates}`);
 
       const response = await fetch(url, { timeout: 5000 });
 
       if (!response.ok) {
-        //debugGps(`[(277)]: Mapbox API error: ${response.status} ${response.statusText}`);
+        debugGps(`[(277)]: Mapbox API error: ${response.status} ${response.statusText}`);
         return `API error: ${response.status}`;
       }
 
@@ -277,7 +274,7 @@ class MetadataService {
         const feature = data.features[0];
         const address =
           feature.place_name || feature.text || "Address not found";
-        //debugGps(` [(282)]:  Found address: ${address}`);
+        debugGps(` [(282)]:  Found address: ${address}`);
         return address;
       } else {
         //debugGps(`[(285)]:  No features found in Mapbox response`;
