@@ -355,6 +355,7 @@ const deleteObjects = (minioClient) => async (req, res) => {
 
 // Update photo metadata in the album JSON file
 const updatePhotoMetadata = (minioClient) => async (req, res) => {
+    debugAlbum(`[albums.js] Update photo metadata request received: ${JSON.stringify(req.params)} with body: ${JSON.stringify(req.body)}`);
   try {
     const { folderPath, objectName } = req.params;
     const { metadata } = req.body;
@@ -368,10 +369,15 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
 
     const metadataService = new MetadataService(minioClient);
 
-    await metadataService.getAddressFromCoordinates(metadata.coordinates)
-      .then(address => {
-      })
-      .catch(err => {
+    debugAlbum(`[albums.js] Updating metadata for ${folderPath}/${objectName} with data: ${JSON.stringify(metadata)}`);
+
+    // If coordinates are provided, attempt to find address (non-blocking)
+    if (metadata.coordinates) {
+      await metadataService.getAddressFromCoordinates(metadata.coordinates)
+        .then(address => {
+          metadata.address = address;
+        })
+        .catch(err => {
         console.error(`Error finding address: ${err}`);
       });
 
