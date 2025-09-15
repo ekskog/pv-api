@@ -373,22 +373,15 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
 
     // If coordinates are provided, attempt to find address (non-blocking)
     if (metadata.coordinates) {
-        metadataService.getAddressFromCoordinates(metadata.coordinates)
+        await metadataService.getAddressFromCoordinates(metadata.coordinates)
           .then(address => {
             metadata.address = address;
+            debugAlbum(`[albums.js (379)] METADATA ${JSON.stringify(metadata)}`);
           })
           .catch(err => {
             console.error(`Error finding address: ${err}`);
           });
     }
-
-    await metadataService.getAddressFromCoordinates(metadata.coordinates)
-      .then(address => {
-        debugAlbum(`[albums.js] Found address: ${address}`);
-      })
-      .catch(err => {
-        console.error(`Error finding address: ${err}`);
-      });
 
     // Construct the metadata file path
     const metadataPath = `${folderPath}/${folderPath}.json`;
@@ -411,6 +404,9 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
           success: false,
           message: "Photo not found in metadata."
         });
+      } else {
+        debugAlbum(`[albums.js (408)] PHOTO INDEX ${photoIndex}`)
+        debugAlbum(`[albums.js (409)] METADATA JSON ${JSON.stringify(metadataJson.media[photoIndex])}`);
       }
 
       // Update the metadata for this photo
