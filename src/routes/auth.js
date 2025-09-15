@@ -83,9 +83,7 @@ router.post("/login", async (req, res) => {
       );
 
       if (!isValidTurnstile) {
-        debugAuth(
-          `[auth.js]: Turnstile verification failed for IP: ${clientIP}`
-        );
+        debugAuth(`[auth.js]: Turnstile verification failed for IP: ${clientIP}`);
         return res.status(400).json({
           success: false,
           error: "Security verification failed. Please try again.",
@@ -95,10 +93,8 @@ router.post("/login", async (req, res) => {
       debugAuth(
         `[auth.js]: Turnstile verification passed for user: ${username}`
       );
-    }else {
-      debugAuth(
-        `[auth.js]: Bypassing DUMMY Turnstile verification for user: ${username}`
-      );
+    } else {
+      debugAuth(`[auth.js]: Bypassing DUMMY Turnstile verification for user: ${username}`);
     }
 
     // Authenticate user (your existing logic)
