@@ -355,7 +355,7 @@ const deleteObjects = (minioClient) => async (req, res) => {
 
 // PUT /buckets/:bucketName/objects - Update photo metadata in the album JSON file
 const updatePhotoMetadata = (minioClient) => async (req, res) => {
-    debugAlbum(`[albums.js] Update photo metadata request received: ${JSON.stringify(req.params)} with body: ${JSON.stringify(req.body)}`);
+  debugAlbum(`[albums.js] Update photo metadata request received: ${JSON.stringify(req.params)} with body: ${JSON.stringify(req.body)}`);
   try {
     const { folderPath, objectName } = req.params;
     const { metadata } = req.body;
@@ -373,14 +373,14 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
 
     // If coordinates are provided, attempt to find address (non-blocking)
     if (metadata.coordinates) {
-        await metadataService.getAddressFromCoordinates(metadata.coordinates)
-          .then(address => {
-            metadata.location = address;
-            debugAlbum(`[albums.js (379)] METADATA ${JSON.stringify(metadata)}`);
-          })
-          .catch(err => {
-            console.error(`Error finding address: ${err}`);
-          });
+      await metadataService.getAddressFromCoordinates(metadata.coordinates)
+        .then(address => {
+          metadata.location = address;
+          debugAlbum(`[albums.js (379)] METADATA ${JSON.stringify(metadata)}`);
+        })
+        .catch(err => {
+          console.error(`Error finding address: ${err}`);
+        });
     }
 
     // Construct the metadata file path
@@ -405,15 +405,17 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
           message: "Photo not found in metadata."
         });
       } else {
-        debugAlbum(`[albums.js (408)] PHOTO INDEX ${photoIndex}`)
-        debugAlbum(`[albums.js (409)] METADATA JSON ${JSON.stringify(metadataJson.media[photoIndex])}`);
+        debugAlbum(`[albums.js (409)] METADATA JSON ${JSON.stringify(metadata)}`);
+        // Update the metadata for this photo
+        metadataJson.media[photoIndex] = {
+          ...metadataJson.media[photoIndex],
+          ...metadata
+        };
+        debugAlbum(`[albums.js (414)] METADATA CHANGED TO >> ${JSON.stringify(metadataJson.media[photoIndex])}`);
+
       }
 
-      // Update the metadata for this photo
-      metadataJson.media[photoIndex] = {
-        ...metadataJson.media[photoIndex],
-        ...metadata
-      };
+
 
       // Update the lastUpdated timestamp
       metadataJson.lastUpdated = new Date().toISOString();
