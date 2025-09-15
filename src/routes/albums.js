@@ -353,7 +353,7 @@ const deleteObjects = (minioClient) => async (req, res) => {
   }
 };
 
-// Update photo metadata in the album JSON file
+// PUT /buckets/:bucketName/objects - Update photo metadata in the album JSON file
 const updatePhotoMetadata = (minioClient) => async (req, res) => {
     debugAlbum(`[albums.js] Update photo metadata request received: ${JSON.stringify(req.params)} with body: ${JSON.stringify(req.body)}`);
   try {
@@ -384,6 +384,7 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
 
     await metadataService.getAddressFromCoordinates(metadata.coordinates)
       .then(address => {
+        debugAlbum(`[albums.js] Found address: ${address}`);
       })
       .catch(err => {
         console.error(`Error finding address: ${err}`);
