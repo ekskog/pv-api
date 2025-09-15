@@ -375,7 +375,7 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
     if (metadata.coordinates) {
         await metadataService.getAddressFromCoordinates(metadata.coordinates)
           .then(address => {
-            metadata.address = address;
+            metadata.location = address;
             debugAlbum(`[albums.js (379)] METADATA ${JSON.stringify(metadata)}`);
           })
           .catch(err => {
