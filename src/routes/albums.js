@@ -58,6 +58,7 @@ const getAlbums = (minioClient) => async (req, res) => {
 const createAlbum = (minioClient) => async (req, res) => {
   try {
     const { folderPath } = req.params;
+    const { description, month, year } = req.body;
 
     // Clean the folder path: remove leading/trailing slashes, then ensure it ends with /
     let cleanPath = folderPath.trim();
@@ -97,7 +98,6 @@ const createAlbum = (minioClient) => async (req, res) => {
       album: {
         name: cleanPath,
         created: new Date().toISOString(),
-        description: "",
         totalObjects: 0,
         totalSize: 0,
         lastModified: new Date().toISOString(),
@@ -123,7 +123,9 @@ const createAlbum = (minioClient) => async (req, res) => {
     let mariaCreate = await database.createAlbum({
       name: cleanPath,
       path: normalizedPath,
-      description: "",
+      description: description || "",
+      month: month || null,
+      year: year || null,
     });
 
     res.status(201).json({

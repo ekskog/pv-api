@@ -245,7 +245,7 @@ class Database {
   // ========================= ALBUM METHODS =========================
 
   // Create new album
-  async createAlbum({ name, path, description = null }) {
+  async createAlbum({ name, path, description = null, month = null, year = null }) {
     const connection = await this.pool.getConnection();
     try {
       // Check if album with this path already exists
@@ -261,8 +261,8 @@ class Database {
 
       // Insert album without slug first to get the ID
       const [result] = await connection.execute(
-        "INSERT INTO albums (name, path, description, counter) VALUES (?, ?, ?, ?)",
-        [name, path, description, 0]
+        "INSERT INTO albums (name, path, description, month, year, counter) VALUES (?, ?, ?, ?, ?, ?)",
+        [name, path, description, month, year, 0]
       );
 
       const albumId = result.insertId;

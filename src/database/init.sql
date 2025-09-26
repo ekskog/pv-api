@@ -32,5 +32,22 @@ INSERT IGNORE INTO users (username, email, password_hash, role) VALUES
 INSERT IGNORE INTO users (username, email, password_hash, role) VALUES 
 ('user', 'user@photovault.local', '$2a$10$YourHashHere', 'user');
 
--- You'll need to update the password hashes above with actual bcrypt hashes
--- or use the API to create users with proper password hashing
+-- Create albums table
+CREATE TABLE IF NOT EXISTS albums (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE,
+    path VARCHAR(500) NOT NULL UNIQUE,
+    description TEXT,
+    month VARCHAR(2),
+    year VARCHAR(4),
+    counter INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    INDEX idx_name (name),
+    INDEX idx_slug (slug),
+    INDEX idx_path (path),
+    INDEX idx_month (month),
+    INDEX idx_year (year)
+);
