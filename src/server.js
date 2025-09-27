@@ -233,8 +233,8 @@ async function startServer() {
     app.listen(PORT, () => {
       const k8sService = config.kubernetes.serviceName;
       const k8sNamespace = config.kubernetes.namespace || "photovault";
-      //debugServer(`Starting PhotoVault ${new Date()}...`);
-      //debugServer(        `> PhotoVault API server running on port ${config.server.port}`      );
+      debugServer(`Starting PhotoVault ${new Date()}...`);
+      debugServer(        `> PhotoVault API server running on port ${config.server.port}`      );
     });
   } catch (error) {
     //debugServer(`[server.js] Failed to start server:`, error.message);
