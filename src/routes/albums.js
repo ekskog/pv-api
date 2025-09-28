@@ -461,6 +461,157 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
   }
 };
 
+// PUT /album/:currentName - Rename an album (Admin only)
+const renameAlbum = (minioClient) => async (req, res) => {
+  try {
+    const { currentName } = req.params;
+    const { newName } = req.body;
+
+    if (!newName || !newName.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "New album name is required",
+      });
+    }
+
+    const cleanNewName = newName.trim();
+    const newNormalizedPath = `${cleanNewName}/`;
+
+    // Check if album exists
+    const album = await database.getAlbumByName(currentName);
+    if (!album) {
+      return res.status(404).json({
+        success: false,
+        error: "Album not found",
+      });
+    }
+
+    // Check if new name already exists
+    const existingAlbum = await database.getAlbumByName(cleanNewName);
+    if (existingAlbum) {
+      return res.status(409).json({
+        success: false,
+        error: "Album with this name already exists",
+      });
+    }
+
+    // Check if new path already exists in MinIO
+    const existingObjects = [];
+    const stream = minioClient.listObjectsV2(process.env.MINIO_BUCKET_NAME, newNormalizedPath, false);
+    for await (const obj of stream) {
+      existingObjects.push(obj);
+      break; // We only need to check if any object exists with this prefix
+    }
+
+    if (existingObjects.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: "Album path already exists in storage",
+      });
+    }
+
+    const oldPath = album.path;
+    const oldMetadataPath = `${oldPath}${currentName}.json`;
+    const newMetadataPath = `${newNormalizedPath}${cleanNewName}.json`;
+
+    // Start transaction-like operation for MinIO
+    try {
+      // 1. Read current metadata
+      const metadataStream = await minioClient.getObject(config.minio.bucketName, oldMetadataPath);
+      let metadata = "";
+      for await (const chunk of metadataStream) {
+        metadata += chunk.toString();
+      }
+      const metadataJson = JSON.parse(metadata);
+
+      // 2. Update metadata with new album name
+      metadataJson.album.name = cleanNewName;
+      metadataJson.lastUpdated = new Date().toISOString();
+
+      // 3. Update media paths in metadata (sourceImage fields)
+      metadataJson.media = metadataJson.media.map(item => ({
+        ...item,
+        sourceImage: item.sourceImage.replace(oldPath, newNormalizedPath)
+      }));
+
+      // 4. List all objects in the old album path
+      const objectsToMove = [];
+      const listStream = minioClient.listObjectsV2(config.minio.bucketName, oldPath, true);
+      for await (const obj of listStream) {
+        objectsToMove.push(obj);
+      }
+
+      // 5. Copy all objects to new path
+      for (const obj of objectsToMove) {
+        const newKey = obj.name.replace(oldPath, newNormalizedPath);
+
+        // Copy object
+        await minioClient.copyObject(
+          config.minio.bucketName,
+          newKey,
+          `${config.minio.bucketName}/${obj.name}`
+        );
+      }
+
+      // 6. Put updated metadata at new location
+      const updatedMetadataContent = Buffer.from(JSON.stringify(metadataJson, null, 2));
+      await minioClient.putObject(
+        config.minio.bucketName,
+        newMetadataPath,
+        updatedMetadataContent,
+        updatedMetadataContent.length,
+        {
+          "Content-Type": "application/json",
+          "X-Amz-Meta-Type": "album-metadata",
+        }
+      );
+
+      // 7. Update database
+      const updateResult = await database.updateAlbumDescription(album.id, {
+        name: cleanNewName,
+        description: album.description // Keep existing description
+      });
+
+      if (!updateResult) {
+        throw new Error("Failed to update album in database");
+      }
+
+      // 8. Delete old objects (only after successful copy and DB update)
+      for (const obj of objectsToMove) {
+        await minioClient.removeObject(config.minio.bucketName, obj.name);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Album '${currentName}' renamed to '${cleanNewName}' successfully`,
+        data: {
+          oldName: currentName,
+          newName: cleanNewName,
+          oldPath: oldPath,
+          newPath: newNormalizedPath,
+          objectsMoved: objectsToMove.length
+        },
+      });
+
+    } catch (minioError) {
+      console.error("[albums.js] MinIO operation failed during rename:", minioError);
+      // Note: In a production system, you might want to implement rollback logic here
+      // For now, we'll return the error and let the admin handle cleanup if needed
+      res.status(500).json({
+        success: false,
+        error: `Storage operation failed: ${minioError.message}`,
+      });
+    }
+
+  } catch (error) {
+    console.error("[albums.js] Rename album error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
 // Consolidate the module.exports into a single export
 module.exports = (minioClient, processFilesInBackground) => {
   router.get("/albums", getAlbums(minioClient));
@@ -479,6 +630,12 @@ module.exports = (minioClient, processFilesInBackground) => {
     authenticateToken,
     requireRole("admin"),
     createAlbum(minioClient)
+  );
+  router.put(
+    "/album/:currentName",
+    authenticateToken,
+    requireRole("admin"),
+    renameAlbum(minioClient)
   );
   router.delete(
     "/objects/:folderPath/:objectName",
