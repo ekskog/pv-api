@@ -15,7 +15,6 @@ const debugAlbum = debug("photovault:album");
 const debugMinio = debug("photovault:minio");
 const debugUpload = debug("photovault:upload");
 
-
 // Configure multer for file uploads (store in memory)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -76,7 +75,11 @@ const createAlbum = (minioClient) => async (req, res) => {
     const normalizedPath = `${cleanPath}/`;
 
     const existingObjects = [];
-    const stream = minioClient.listObjectsV2(process.env.MINIO_BUCKET_NAME, normalizedPath, false);
+    const stream = minioClient.listObjectsV2(
+      process.env.MINIO_BUCKET_NAME,
+      normalizedPath,
+      false
+    );
 
     for await (const obj of stream) {
       existingObjects.push(obj);
@@ -274,7 +277,13 @@ const uploadFiles = (processFilesInBackground) => async (req, res) => {
     };
 
     res.status(200).json(response);
-    processFilesInBackground(files, config.minio.bucketName, folderPath, startTime, jobId);
+    processFilesInBackground(
+      files,
+      config.minio.bucketName,
+      folderPath,
+      startTime,
+      jobId
+    );
   } catch (error) {
     const errorTime = Date.now() - startTime;
 
@@ -296,13 +305,16 @@ const deleteObjects = (minioClient) => async (req, res) => {
     await minioClient.removeObject(config.minio.bucketName, objectPath);
 
     // Extract folder name from the path to construct correct metadata path
-    const pathParts = folderPath.split('/');
+    const pathParts = folderPath.split("/");
     const folderName = pathParts[pathParts.length - 1];
     const metadataPath = `${folderPath}/${folderName}.json`;
 
     try {
       // Try to read and update the metadata file
-      const metadataStream = await minioClient.getObject(config.minio.bucketName, metadataPath);
+      const metadataStream = await minioClient.getObject(
+        config.minio.bucketName,
+        metadataPath
+      );
       let metadata = "";
       for await (const chunk of metadataStream) {
         metadata += chunk.toString();
@@ -312,14 +324,18 @@ const deleteObjects = (minioClient) => async (req, res) => {
 
       // Remove the object from the media array using sourceImage field
       const originalLength = metadataJson.media.length;
-      metadataJson.media = metadataJson.media.filter((item) => item.sourceImage !== objectName);
+      metadataJson.media = metadataJson.media.filter(
+        (item) => item.sourceImage !== objectName
+      );
 
       // Update lastUpdated timestamp
       metadataJson.lastUpdated = new Date().toISOString();
 
       // Only update if we actually removed something
       if (metadataJson.media.length < originalLength) {
-        const updatedMetadata = Buffer.from(JSON.stringify(metadataJson, null, 2));
+        const updatedMetadata = Buffer.from(
+          JSON.stringify(metadataJson, null, 2)
+        );
         await minioClient.putObject(
           config.minio.bucketName,
           metadataPath,
@@ -332,7 +348,6 @@ const deleteObjects = (minioClient) => async (req, res) => {
       } else {
         //debugUpload(`[albums.js] Object ${objectName} not found in metadata, skipping metadata update`);
       }
-
     } catch (metadataError) {
       // If metadata file doesn't exist or can't be read, log it but don't fail the deletion
       //debugUpload(`[albums.js] Metadata update failed (non-critical): ${metadataError.message}`);
@@ -344,8 +359,8 @@ const deleteObjects = (minioClient) => async (req, res) => {
       data: {
         deletedObject: objectName,
         objectPath: objectPath,
-        metadataUpdated: true
-      }
+        metadataUpdated: true,
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -357,7 +372,11 @@ const deleteObjects = (minioClient) => async (req, res) => {
 
 // PUT /buckets/:bucketName/objects - Update photo metadata in the album JSON file
 const updatePhotoMetadata = (minioClient) => async (req, res) => {
-  debugAlbum(`[albums.js] Update photo metadata request received: ${JSON.stringify(req.params)} with body: ${JSON.stringify(req.body)}`);
+  debugAlbum(
+    `[albums.js] Update photo metadata request received: ${JSON.stringify(
+      req.params
+    )} with body: ${JSON.stringify(req.body)}`
+  );
   try {
     const { folderPath, objectName } = req.params;
     const { metadata } = req.body;
@@ -365,22 +384,27 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
     if (!folderPath || !objectName || !metadata) {
       return res.status(400).json({
         success: false,
-        message: "folderPath, objectName, and metadata are required."
+        message: "folderPath, objectName, and metadata are required.",
       });
     }
 
     const metadataService = new MetadataService(minioClient);
 
-    debugAlbum(`[albums.js] Updating metadata for ${folderPath}/${objectName} with data: ${JSON.stringify(metadata)}`);
+    debugAlbum(
+      `[albums.js] Updating metadata for ${folderPath}/${objectName} with data: ${JSON.stringify(
+        metadata
+      )}`
+    );
 
     // If coordinates are provided, attempt to find address (non-blocking)
     if (metadata.coordinates) {
-      await metadataService.getAddressFromCoordinates(metadata.coordinates)
-        .then(address => {
+      await metadataService
+        .getAddressFromCoordinates(metadata.coordinates)
+        .then((address) => {
           metadata.location = address;
           debugAlbum(`[albums.js (379)] METADATA ${JSON.stringify(metadata)}`);
         })
-        .catch(err => {
+        .catch((err) => {
           console.error(`Error finding address: ${err}`);
         });
     }
@@ -390,7 +414,10 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
 
     try {
       // Read the current metadata file
-      const metadataStream = await minioClient.getObject(config.minio.bucketName, metadataPath);
+      const metadataStream = await minioClient.getObject(
+        config.minio.bucketName,
+        metadataPath
+      );
       let currentMetadata = "";
       for await (const chunk of metadataStream) {
         currentMetadata += chunk.toString();
@@ -399,31 +426,38 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
       const metadataJson = JSON.parse(currentMetadata);
 
       // Find and update the specific photo's metadata
-      const photoIndex = metadataJson.media.findIndex(item => item.sourceImage === `${folderPath}/${objectName}`);
+      const photoIndex = metadataJson.media.findIndex(
+        (item) => item.sourceImage === `${folderPath}/${objectName}`
+      );
 
       if (photoIndex === -1) {
         return res.status(404).json({
           success: false,
-          message: "Photo not found in metadata."
+          message: "Photo not found in metadata.",
         });
       } else {
-        debugAlbum(`[albums.js (409)] METADATA JSON ${JSON.stringify(metadata)}`);
+        debugAlbum(
+          `[albums.js (409)] METADATA JSON ${JSON.stringify(metadata)}`
+        );
         // Update the metadata for this photo
         metadataJson.media[photoIndex] = {
           ...metadataJson.media[photoIndex],
-          ...metadata
+          ...metadata,
         };
-        debugAlbum(`[albums.js (414)] METADATA CHANGED TO >> ${JSON.stringify(metadataJson.media[photoIndex])}`);
-
+        debugAlbum(
+          `[albums.js (414)] METADATA CHANGED TO >> ${JSON.stringify(
+            metadataJson.media[photoIndex]
+          )}`
+        );
       }
-
-
 
       // Update the lastUpdated timestamp
       metadataJson.lastUpdated = new Date().toISOString();
 
       // Write the updated metadata back to MinIO
-      const updatedMetadataContent = Buffer.from(JSON.stringify(metadataJson, null, 2));
+      const updatedMetadataContent = Buffer.from(
+        JSON.stringify(metadataJson, null, 2)
+      );
       await minioClient.putObject(
         config.minio.bucketName,
         metadataPath,
@@ -439,19 +473,17 @@ const updatePhotoMetadata = (minioClient) => async (req, res) => {
         message: "Photo metadata updated successfully.",
         data: {
           updatedPhoto: objectName,
-          metadataPath: metadataPath
-        }
+          metadataPath: metadataPath,
+        },
       });
-
     } catch (metadataError) {
       console.error(`[albums.js] Error updating metadata:`, metadataError);
       return res.status(500).json({
         success: false,
         message: "Failed to update metadata file.",
-        error: metadataError.message
+        error: metadataError.message,
       });
     }
-
   } catch (error) {
     console.error(`[albums.js] Update metadata error:`, error);
     res.status(500).json({
@@ -497,7 +529,11 @@ const renameAlbum = (minioClient) => async (req, res) => {
 
     // Check if new path already exists in MinIO
     const existingObjects = [];
-    const stream = minioClient.listObjectsV2(process.env.MINIO_BUCKET_NAME, newNormalizedPath, false);
+    const stream = minioClient.listObjectsV2(
+      process.env.MINIO_BUCKET_NAME,
+      newNormalizedPath,
+      false
+    );
     for await (const obj of stream) {
       existingObjects.push(obj);
       break; // We only need to check if any object exists with this prefix
@@ -517,7 +553,10 @@ const renameAlbum = (minioClient) => async (req, res) => {
     // Start transaction-like operation for MinIO
     try {
       // 1. Read current metadata
-      const metadataStream = await minioClient.getObject(config.minio.bucketName, oldMetadataPath);
+      const metadataStream = await minioClient.getObject(
+        config.minio.bucketName,
+        oldMetadataPath
+      );
       let metadata = "";
       for await (const chunk of metadataStream) {
         metadata += chunk.toString();
@@ -529,20 +568,29 @@ const renameAlbum = (minioClient) => async (req, res) => {
       metadataJson.lastUpdated = new Date().toISOString();
 
       // 3. Update media paths in metadata (sourceImage fields)
-      metadataJson.media = metadataJson.media.map(item => ({
+      metadataJson.media = metadataJson.media.map((item) => ({
         ...item,
-        sourceImage: item.sourceImage.replace(oldPath, newNormalizedPath)
+        sourceImage: item.sourceImage.replace(oldPath, newNormalizedPath),
       }));
 
       // 4. List all objects in the old album path
       const objectsToMove = [];
-      const listStream = minioClient.listObjectsV2(config.minio.bucketName, oldPath, true);
+      const listStream = minioClient.listObjectsV2(
+        config.minio.bucketName,
+        oldPath,
+        true
+      );
       for await (const obj of listStream) {
         objectsToMove.push(obj);
       }
 
-      // 5. Copy all objects to new path
+      // 5. Copy all objects to new path (EXCLUDING the old metadata file)
       for (const obj of objectsToMove) {
+        // Skip the old metadata JSON file - we'll create a new one with updated content
+        if (obj.name === oldMetadataPath) {
+          continue;
+        }
+
         const newKey = obj.name.replace(oldPath, newNormalizedPath);
 
         // Copy object
@@ -554,7 +602,9 @@ const renameAlbum = (minioClient) => async (req, res) => {
       }
 
       // 6. Put updated metadata at new location
-      const updatedMetadataContent = Buffer.from(JSON.stringify(metadataJson, null, 2));
+      const updatedMetadataContent = Buffer.from(
+        JSON.stringify(metadataJson, null, 2)
+      );
       await minioClient.putObject(
         config.minio.bucketName,
         newMetadataPath,
@@ -569,7 +619,7 @@ const renameAlbum = (minioClient) => async (req, res) => {
       // 7. Update database
       const updateResult = await database.updateAlbumDescription(album.id, {
         name: cleanNewName,
-        description: album.description // Keep existing description
+        description: album.description, // Keep existing description
       });
 
       if (!updateResult) {
@@ -589,12 +639,14 @@ const renameAlbum = (minioClient) => async (req, res) => {
           newName: cleanNewName,
           oldPath: oldPath,
           newPath: newNormalizedPath,
-          objectsMoved: objectsToMove.length
+          objectsMoved: objectsToMove.length,
         },
       });
-
     } catch (minioError) {
-      console.error("[albums.js] MinIO operation failed during rename:", minioError);
+      console.error(
+        "[albums.js] MinIO operation failed during rename:",
+        minioError
+      );
       // Note: In a production system, you might want to implement rollback logic here
       // For now, we'll return the error and let the admin handle cleanup if needed
       res.status(500).json({
@@ -602,7 +654,6 @@ const renameAlbum = (minioClient) => async (req, res) => {
         error: `Storage operation failed: ${minioError.message}`,
       });
     }
-
   } catch (error) {
     console.error("[albums.js] Rename album error:", error);
     res.status(500).json({
