@@ -181,13 +181,17 @@ const getPhotos = (minioClient) => async (req, res) => {
         }
       }
 
-      objects.push({
+      let result = {
         name: obj.name,
         size: obj.size,
         lastModified: obj.lastModified,
         etag: obj.etag,
         type: "file",
-      });
+      };
+
+      debugAlbum(`[(192) albums.js] Found object: ${result.name}`);
+
+      objects.push(result);
     }
 
     res.json({
@@ -199,6 +203,7 @@ const getPhotos = (minioClient) => async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("[(206) albums.js] Error:", error.message);
     res.status(500).json({
       success: false,
       error: error.message,
