@@ -5,9 +5,20 @@ const debugHealth = debug("photovault:health");
 const config = require("../config"); // defaults to ./config/index.js
 const database = require("../services/database-service");
 
+// Health check logging state
+let lastHealthLogTime = 0;
+let hasLoggedFirstSuccess = false;
+const LOG_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes in milliseconds
+
 // Health check route
 const healthCheck = (minioClient) => async (req, res) => {
-  debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
+  const now = Date.now();
+  const shouldLog = !hasLoggedFirstSuccess || (now - lastHealthLogTime) >= LOG_INTERVAL_MS;
+
+  if (shouldLog) {
+    debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
+    lastHealthLogTime = now;
+  }
 
   let minioHealthy = false;
   let converterHealthy = false;
@@ -62,8 +73,13 @@ const healthCheck = (minioClient) => async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
-  
+  if (shouldLog) {
+    debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
+    if (isHealthy && !hasLoggedFirstSuccess) {
+      hasLoggedFirstSuccess = true;
+    }
+  }
+
   res.status(code).json({
     status,
     timestamp: new Date().toISOString(),
