@@ -150,7 +150,6 @@ const createAlbum = (minioClient) => async (req, res) => {
 
 // GET /albums/:albumName/ - Get photos for album by name
 const getPhotos = (minioClient) => async (req, res) => {
-    debugAlbum("[(153) albums.js] Fetching photos for album:", req.params.name);
   try {
     const { name } = req.params;
 
@@ -190,12 +189,9 @@ const getPhotos = (minioClient) => async (req, res) => {
         type: "file",
       };
 
-      debugAlbum(`[(192) albums.js] Found object: ${result.name}`);
-
       objects.push(result);
     }
     
-    debugAlbum(`[(197) albums.js] Total objects found: ${objects.length}`);
 
     res.json({
       success: true,
@@ -270,6 +266,8 @@ const uploadFiles = (processFilesInBackground) => async (req, res) => {
         error: "No files provided",
       });
     }
+
+    debugUpload(`[albums.js (273)] Upload request received for ${files.length} files to folder: ${folderPath} with jobId: ${jobId}`);
 
     const response = {
       success: true,
