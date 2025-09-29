@@ -7,7 +7,7 @@ const database = require("../services/database-service");
 
 // Health check route
 const healthCheck = (minioClient) => async (req, res) => {
-  // debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
+  debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
 
   let minioHealthy = false;
   let converterHealthy = false;
@@ -62,6 +62,8 @@ const healthCheck = (minioClient) => async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
+  debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
+  
   res.status(code).json({
     status,
     timestamp: new Date().toISOString(),
