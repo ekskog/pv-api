@@ -194,6 +194,8 @@ const getPhotos = (minioClient) => async (req, res) => {
 
       objects.push(result);
     }
+    
+    debugAlbum(`[(197) albums.js] Total objects found: ${objects.length}`);
 
     res.json({
       success: true,
