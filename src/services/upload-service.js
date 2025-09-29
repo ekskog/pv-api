@@ -40,11 +40,11 @@ class UploadService {
 
       // Step 1: Extract metadata
       extractedMetadata = await this.metadataService.extractEssentialMetadata(buffer, originalname);
-      debugUpload(`[(43)]: Extracted metadata for ${originalname}: ${JSON.stringify(extractedMetadata)}`);
+      //debugUpload(`[(43)]: Extracted metadata for ${originalname}: ${JSON.stringify(extractedMetadata)}`);
 
       // Step 2: Convert and upload image
       uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-      debugUpload(`[(47)]: Uploaded file ${originalname} as ${uploadResult.objectName}`);
+      //debugUpload(`[(47)]: Uploaded file ${originalname} as ${uploadResult.objectName}`);
 
       // Step 3: Try updating JSON metadata (non-blocking)
       if (uploadResult && extractedMetadata) {

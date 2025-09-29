@@ -274,7 +274,7 @@ class MetadataService {
         const feature = data.features[0];
         const address =
           feature.place_name || feature.text || "Address not found";
-        debugGps(` [(277)]:  Found address: ${address}`);
+        //debugGps(` [(277)]:  Found address: ${address}`);
         return address;
       } else {
         //debugGps(`[(285)]:  No features found in Mapbox response`;
