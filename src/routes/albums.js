@@ -627,6 +627,7 @@ const renameAlbum = (minioClient) => async (req, res) => {
       // 7. Update database
       const updateResult = await database.updateAlbumDescription(album.id, {
         name: cleanNewName,
+        path: newNormalizedPath,
         description: album.description, // Keep existing description
       });
 

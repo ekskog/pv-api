@@ -341,7 +341,7 @@ class Database {
   }
 
   // Update album
-  async updateAlbumDescription(albumId, { name, description }) {
+  async updateAlbumDescription(albumId, { name, path, description }) {
     const connection = await this.pool.getConnection();
     try {
       // If name is being updated, we might want to update the slug too
@@ -352,6 +352,11 @@ class Database {
         updateQuery += ", name = ?, slug = ?";
         const newSlug = makeSlugWithId(name, albumId);
         params.push(name, newSlug);
+      }
+
+      if (path !== undefined) {
+        updateQuery += ", path = ?";
+        params.push(path);
       }
 
       if (description !== undefined) {
