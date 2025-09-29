@@ -235,6 +235,8 @@ async function startServer() {
       const k8sNamespace = config.kubernetes.namespace || "photovault";
       debugServer(`Starting PhotoVault ${new Date()}...`);
       debugServer(        `> PhotoVault API server running on port ${config.server.port}`      );
+      debugServer(        `> Connected to MinIO at ${config.minio.endpoint}:${config.minio.port} (bucket: ${config.minio.bucketName})`      );
+      
     });
   } catch (error) {
     //debugServer(`[server.js] Failed to start server:`, error.message);
