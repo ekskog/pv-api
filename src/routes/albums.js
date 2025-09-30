@@ -31,7 +31,8 @@ const getAlbums = (minioClient) => async (req, res) => {
     const albumMetadata = await Promise.all(
       albums.map(async (album) => {
         const fileCount =
-          (await countObjectsInPath(minioClient, "photovault", album.path)) - 1;
+          //(await countObjectsInPath(minioClient, "photovault", album.path)) - 1;
+          (await countObjectsInPath(minioClient, "photovault", album.name + "/")) - 1;
 
         return {
           ...album, // keep name, slug, path, description, etc.
@@ -162,11 +163,14 @@ const getPhotos = (minioClient) => async (req, res) => {
       });
     }
 
+    let pathFromName = name + "/";
+
     // Fetch the MinIO objects for this album using the album.path
     const objects = [];
     const stream = minioClient.listObjectsV2(
       config.minio.bucketName,
-      album.path,
+      //album.path,
+      pathFromName,
       true
     ); // recursive = true to get all files
 
@@ -191,7 +195,7 @@ const getPhotos = (minioClient) => async (req, res) => {
 
       objects.push(result);
     }
-    
+
 
     res.json({
       success: true,
@@ -216,11 +220,13 @@ const getObject = (minioClient) => async (req, res) => {
     const { name, object } = req.params;
 
     const album = await database.getAlbumByName(name);
+    let pathFromName = name + "/";
     if (!album) {
       return res.status(404).json({ success: false, error: "Album not found" });
     }
 
-    const objectKey = `${album.path}${object}`;
+    //const objectKey = `${album.path}${object}`;
+    const objectKey = `${pathFromName}${object}`;
 
     // Get object metadata first (for headers like content-type, length)
     const stat = await minioClient.statObject(
@@ -552,7 +558,8 @@ const renameAlbum = (minioClient) => async (req, res) => {
       });
     }
 
-    const oldPath = album.path;
+    //    const oldPath = album.path;
+    const oldPath = currentName + "/";
     const oldMetadataPath = `${oldPath}${currentName}.json`;
     const newMetadataPath = `${newNormalizedPath}${cleanNewName}.json`;
 
