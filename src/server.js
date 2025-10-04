@@ -113,6 +113,7 @@ async function processFilesInBackground(
 
         // Send progress update after each successful file upload
         const progressPercent = Math.round(((i + 1) / totalFiles) * 100);
+        debugUpload(`[server.js (116)] Sending progress update for file ${file.originalname}: ${progressPercent}%`);
         sendSSEEvent(jobId, "progress", {
           status: "processing",
           message: `Processed ${uploadResults.length} of ${totalFiles} files`,
