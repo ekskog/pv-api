@@ -93,12 +93,13 @@ async function processFilesInBackground(
   try {
     const uploadResults = [];
     const errors = [];
+    const totalFiles = files.length;
 
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < totalFiles; i++) {
       const file = files[i];
 
       try {
-        debugUpload(`[(101)] Processing file ${i + 1} of ${files.length}: ${file.originalname} >> ${file.mimetype}`);
+        debugUpload(`[(101)] Processing file ${i + 1} of ${totalFiles}: ${file.originalname} >> ${file.mimetype}`);
 
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
@@ -109,11 +110,41 @@ async function processFilesInBackground(
         uploadResults.push(result);
 
         debugUpload(`[server.js (114)] Successfully uploaded: ${file.originalname} to ${folderPath}`);
+
+        // Send progress update after each successful file upload
+        const progressPercent = Math.round(((i + 1) / totalFiles) * 100);
+        sendSSEEvent(jobId, "progress", {
+          status: "processing",
+          message: `Processed ${uploadResults.length} of ${totalFiles} files`,
+          progress: {
+            current: i + 1,
+            total: totalFiles,
+            percentage: progressPercent,
+            lastUploaded: file.originalname,
+            uploaded: uploadResults.length,
+            failed: errors.length,
+          },
+        });
       } catch (error) {
         debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
+        });
+
+        // Send progress update even for failed files
+        const progressPercent = Math.round(((i + 1) / totalFiles) * 100);
+        sendSSEEvent(jobId, "progress", {
+          status: "processing",
+          message: `Processed ${i + 1} of ${totalFiles} files`,
+          progress: {
+            current: i + 1,
+            total: totalFiles,
+            percentage: progressPercent,
+            lastFailed: file.originalname,
+            uploaded: uploadResults.length,
+            failed: errors.length,
+          },
         });
       }
     }
