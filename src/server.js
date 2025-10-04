@@ -90,17 +90,31 @@ async function processFilesInBackground(
   startTime,
   jobId
 ) {
+  debugUpload(`[server.js (97)] Starting background processing for job ${jobId} with ${files.length} files`);
+
   try {
     const uploadResults = [];
     const errors = [];
     const totalFiles = files.length;
 
+    // Send initial starting event
+    sendSSEEvent(jobId, "started", {
+      status: "started",
+      message: `Starting to process ${totalFiles} files...`,
+      progress: {
+        current: 0,
+        total: totalFiles,
+        percentage: 0,
+        uploaded: 0,
+        failed: 0,
+      },
+    });
+
     for (let i = 0; i < totalFiles; i++) {
       const file = files[i];
+      debugUpload(`[server.js (106)] Processing file ${i + 1}/${totalFiles}: ${file.originalname}`);
 
       try {
-        debugUpload(`[(101)] Processing file ${i + 1} of ${totalFiles}: ${file.originalname} >> ${file.mimetype}`);
-
         // Process the individual file
         const result = await uploadService.processAndUploadFile(
           file,
@@ -109,14 +123,13 @@ async function processFilesInBackground(
         );
         uploadResults.push(result);
 
-        debugUpload(`[server.js (114)] Successfully uploaded: ${file.originalname} to ${folderPath}`);
+        debugUpload(`[server.js (114)] Successfully processed: ${file.originalname}`);
 
         // Send progress update after each successful file upload
         const progressPercent = Math.round(((i + 1) / totalFiles) * 100);
-        debugUpload(`[server.js (116)] Sending progress update for file ${file.originalname}: ${progressPercent}%`);
         sendSSEEvent(jobId, "progress", {
           status: "processing",
-          message: `Processed ${uploadResults.length} of ${totalFiles} files`,
+          message: `Successfully processed ${file.originalname}`,
           progress: {
             current: i + 1,
             total: totalFiles,
@@ -126,8 +139,9 @@ async function processFilesInBackground(
             failed: errors.length,
           },
         });
+
       } catch (error) {
-        debugUpload(`[server.js (116)] Error processing file ${file.originalname}: ${error.message}`);
+        debugUpload(`[server.js (127)] Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
@@ -135,10 +149,9 @@ async function processFilesInBackground(
 
         // Send progress update even for failed files
         const progressPercent = Math.round(((i + 1) / totalFiles) * 100);
-        debugUpload(`[server.js (138)] Sending progress update for file ${file.originalname}: ${progressPercent}%`);
         sendSSEEvent(jobId, "progress", {
           status: "processing",
-          message: `Processed ${i + 1} of ${totalFiles} files`,
+          message: `Failed to process ${file.originalname}: ${error.message}`,
           progress: {
             current: i + 1,
             total: totalFiles,
@@ -149,69 +162,77 @@ async function processFilesInBackground(
           },
         });
       }
+
+      // Small delay to ensure event ordering and prevent overwhelming the client
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
 
     const processingTime = Date.now() - startTime;
-    debugUpload(`[server.js (125)] Background processing completed in ${processingTime}ms - Success: ${uploadResults.length}, Errors: ${errors.length}`);
-    debugUpload('--------------------------------------------------------------------------\n')
+    debugUpload(`[server.js (148)] Processing completed in ${processingTime}ms. Success: ${uploadResults.length}, Failed: ${errors.length}`);
 
-    await database.incrementFileCounter(uploadResults.length, folderPath);
-
-    // Send single completion message
-    if (errors.length === 0) {
-      // update the file counter on the albums table using database-service
-      sendSSEEvent(jobId, "complete", {
-        status: "success",
-        message: `All ${files.length} files processed successfully!`,
-        results: {
-          uploaded: uploadResults.length,
-          failed: 0,
-          processingTime: processingTime,
-        },
-      });
-    } else if (uploadResults.length === 0) {
-      sendSSEEvent(jobId, "complete", {
-        status: "failed",
-        message: `All files failed to process. Please check the files and try again.`,
-        results: {
-          uploaded: 0,
-          failed: errors.length,
-          processingTime: processingTime,
-        },
-        errors: errors,});
-    } else {
-      sendSSEEvent(jobId, "complete", {
-        status: "partial",
-        message: `${uploadResults.length} files processed successfully, ${errors.length} failed.`,
-        results: {
-          uploaded: uploadResults.length,
-          failed: errors.length,
-          processingTime: processingTime,
-        },
-        errors: errors,
-      });
+    // Update database
+    try {
+      await database.incrementFileCounter(uploadResults.length, folderPath);
+      debugUpload(`[server.js (152)] Updated file counter for ${folderPath} by ${uploadResults.length}`);
+    } catch (dbError) {
+      debugUpload(`[server.js (154)] Error updating file counter: ${dbError.message}`);
     }
 
-    // Clean up SSE connections after 30 seconds
+    // Determine final status and send completion event
+    let finalStatus, finalMessage;
+    if (errors.length === 0) {
+      finalStatus = "success";
+      finalMessage = `All ${totalFiles} files processed successfully!`;
+    } else if (uploadResults.length === 0) {
+      finalStatus = "failed";
+      finalMessage = `All ${totalFiles} files failed to process. Please check the files and try again.`;
+    } else {
+      finalStatus = "partial";
+      finalMessage = `${uploadResults.length} files processed successfully, ${errors.length} failed.`;
+    }
+
+    sendSSEEvent(jobId, "complete", {
+      status: finalStatus,
+      message: finalMessage,
+      results: {
+        uploaded: uploadResults.length,
+        failed: errors.length,
+        processingTime: processingTime,
+        total: totalFiles,
+      },
+      errors: errors.length > 0 ? errors : undefined,
+    });
+
+    debugUpload(`[server.js (173)] Sent completion event for job ${jobId}, status: ${finalStatus}`);
+
+    // Schedule connection cleanup - give client time to receive the completion event
     setTimeout(() => {
-      debugSSE(`[server.js (164)] Cleaning up SSE connections for job ${jobId}`);
+      debugSSE(`[server.js (177)] Cleaning up SSE connections for job ${jobId}`);
       sseConnections.delete(jobId);
-    }, 300000);
+    }, 10000); // Reduced from 5 minutes to 10 seconds since job is complete
+
   } catch (error) {
     const errorTime = Date.now() - startTime;
-    debugUpload(`[server.js (169)] Background processing error after ${errorTime}ms:`,{error: error.message, stack: error.stack});
+    debugUpload(`[server.js (182)] Background processing failed after ${errorTime}ms:`, error.message);
 
     // Send error completion message
     sendSSEEvent(jobId, "complete", {
-      status: "failed",
+      status: "error",
       message: `Processing failed: ${error.message}`,
       error: error.message,
+      results: {
+        uploaded: 0,
+        failed: 0,
+        processingTime: errorTime,
+        total: files.length,
+      },
     });
 
-    // Clean up connections
+    // Clean up connections after error
     setTimeout(() => {
+      debugSSE(`[server.js (196)] Cleaning up SSE connections after error for job ${jobId}`);
       sseConnections.delete(jobId);
-    }, 30000);
+    }, 5000);
   }
 }
 
