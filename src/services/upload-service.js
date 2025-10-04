@@ -33,30 +33,31 @@ class UploadService {
     let uploadResult = null;
 
     try {
-      // Skip unsupported file types
-      if (mimetype !== "image/heic" && mimetype !== "image/jpeg") {
-        return null;
+      if (mimetype === "video/mp4" || mimetype === "video/mov" || mimetype === "video/avi" || mimetype === "video/quicktime") {
+        uploadResult = await this.processVideoFile(file, bucketName, folderPath);
+      } else {
+        if (mimetype !== "image/heic" && mimetype !== "image/jpeg") return null;
+
+        // PHOTOS ONLY
+        // Step 1: Extract metadata
+        extractedMetadata = await this.metadataService.extractEssentialMetadata(buffer, originalname);
+        //debugUpload(`[(43)]: Extracted metadata for ${originalname}: ${JSON.stringify(extractedMetadata)}`);
+
+        // Step 2: Convert and upload image
+        uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
+        //debugUpload(`[(47)]: Uploaded file ${originalname} as ${uploadResult.objectName}`);
+
+        // Step 3: Try updating JSON metadata (non-blocking)
+        if (uploadResult && extractedMetadata) {
+          this.updateJsonMetadataAsync(bucketName, uploadResult, extractedMetadata, originalname)
+            .then(() => {
+             // debugUpload(`[upload-service.js (52)]: Updated JSON metadata for ${originalname}`
+            })
+            .catch((err) => {
+              //debugUpload(`[(55)]: Failed to update JSON metadata for ${originalname}: ${err.message}`);
+            });
+        }
       }
-
-      // Step 1: Extract metadata
-      extractedMetadata = await this.metadataService.extractEssentialMetadata(buffer, originalname);
-      //debugUpload(`[(43)]: Extracted metadata for ${originalname}: ${JSON.stringify(extractedMetadata)}`);
-
-      // Step 2: Convert and upload image
-      uploadResult = await this.processImageFile(file, bucketName, folderPath, mimetype);
-      //debugUpload(`[(47)]: Uploaded file ${originalname} as ${uploadResult.objectName}`);
-
-      // Step 3: Try updating JSON metadata (non-blocking)
-      if (uploadResult && extractedMetadata) {
-        this.updateJsonMetadataAsync(bucketName, uploadResult, extractedMetadata, originalname)
-          .then(() => {
-           // debugUpload(`[upload-service.js (52)]: Updated JSON metadata for ${originalname}`);
-          })
-          .catch((err) => {
-            //debugUpload(`[(55)]: Failed to update JSON metadata for ${originalname}: ${err.message}`);
-          });
-      }
-
       return uploadResult;
     } catch (error) {
       throw new Error(`Failed processing ${originalname}: ${error.message}`);
