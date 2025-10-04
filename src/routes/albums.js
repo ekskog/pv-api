@@ -258,10 +258,7 @@ const getObject = (minioClient) => async (req, res) => {
 };
 
 // POST /buckets/:bucketName/upload - Upload files to a bucket
-const uploadFiles = (processFilesInBackground) => async (req, res) => {
-  const startTime = Date.now();
-  const jobId = uuidv4(); // Generate unique job ID for this upload
-
+const uploadFiles = (pendingJobs) => async (req, res) => {
   try {
     const { folderPath = "" } = req.body;
     const files = req.files;
@@ -273,32 +270,43 @@ const uploadFiles = (processFilesInBackground) => async (req, res) => {
       });
     }
 
+    const jobId = uuidv4(); // Generate unique job ID for this upload
     debugUpload(`[albums.js (273)] Upload request received for ${files.length} files to folder: ${folderPath} with jobId: ${jobId}`);
+
+    // Store job for when SSE connection is established
+    const jobData = {
+      files,
+      bucketName: config.minio.bucketName,
+      folderPath,
+      timestamp: new Date().toISOString(),
+    };
+
+    pendingJobs.set(jobId, jobData);
+    debugUpload(`[albums.js (288)] Stored pending job ${jobId} with ${files.length} files`);
 
     const response = {
       success: true,
-      message: "Files received successfully and are being processed",
+      message: "Files received successfully. Connect to SSE endpoint to start processing.",
       data: {
         bucket: config.minio.bucketName,
         folderPath: folderPath || "/",
         filesReceived: files.length,
-        status: "processing",
+        status: "received",
         jobId: jobId, // Return the job ID to the client
-        timestamp: new Date().toISOString(),
+        timestamp: jobData.timestamp,
       },
     };
 
     res.status(200).json(response);
-    processFilesInBackground(
-      files,
-      config.minio.bucketName,
-      folderPath,
-      startTime,
-      jobId
-    );
-  } catch (error) {
-    const errorTime = Date.now() - startTime;
 
+    // Set timeout to clean up if client never connects
+    setTimeout(() => {
+      if (pendingJobs.has(jobId)) {
+        debugUpload(`[albums.js (304)] Cleaning up expired pending job ${jobId}`);
+        pendingJobs.delete(jobId);
+      }
+    }, 60000); // 60 seconds timeout
+  } catch (error) {
     res.status(500).json({
       success: false,
       error: error.message,
@@ -678,7 +686,7 @@ const renameAlbum = (minioClient) => async (req, res) => {
 };
 
 // Consolidate the module.exports into a single export
-module.exports = (minioClient, processFilesInBackground) => {
+module.exports = (minioClient, { pendingJobs, processFilesInBackground }) => {
   router.get("/albums", getAlbums(minioClient));
   router.get("/album/:name", getPhotos(minioClient));
   router.get("/objects/:name", getPhotos(minioClient));
@@ -688,7 +696,7 @@ module.exports = (minioClient, processFilesInBackground) => {
     authenticateToken,
     requireRole("admin"),
     upload.array("files"),
-    uploadFiles(processFilesInBackground)
+    uploadFiles(pendingJobs)
   );
   router.post(
     "/album/:folderPath",

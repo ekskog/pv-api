@@ -46,8 +46,9 @@ const healthRoutes = require("./routes/health");
 const albumRoutes = require("./routes/albums");
 const statRoutes = require("./routes/stats");
 
-// Store active SSE connections by job ID
+// Store active SSE connections and pending jobs by job ID
 const sseConnections = new Map();
+const pendingJobs = new Map();
 
 const sendSSEEvent = (jobId, eventType, data = {}) => {
   const connection = sseConnections.get(jobId);
@@ -265,13 +266,31 @@ app.get("/processing-status/:jobId", (req, res) => {
   res.write(`data: ${confirmationData}\n\n`);
   debugSSE(`[server.js (230)] Sent ${confirmationData} for job ${jobId}`);
 
+  // Check if there's a pending job and start it
+  const pendingJob = pendingJobs.get(jobId);
+  if (pendingJob) {
+    debugSSE(`[server.js (234)] Found pending job ${jobId}, starting processing...`);
+    pendingJobs.delete(jobId);
+
+    // Start the background processing now that we have the SSE connection
+    const { files, bucketName, folderPath } = pendingJob;
+    const startTime = Date.now();
+
+    processFilesInBackground(files, bucketName, folderPath, startTime, jobId).catch((error) => {
+      debugSSE(`[server.js (241)] Error starting background processing for job ${jobId}:`, error.message);
+    });
+  } else {
+    debugSSE(`[server.js (244)] No pending job found for ${jobId} (already processed or invalid job)`);
+  }
+
   // Handle client disconnect
   req.on("close", () => {
-    debugSSE(`[server.js (234)] Client disconnected for job ${jobId}`);
+    debugSSE(`[server.js (248)] Client disconnected for job ${jobId}`);
     sseConnections.delete(jobId);
   });
 
   req.on("error", (error) => {
+    debugSSE(`[server.js (252)] SSE connection error for job ${jobId}:`, error.message);
     sseConnections.delete(jobId);
   });
 });
@@ -310,7 +329,7 @@ process.on("SIGINT", async () => {
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 app.use("/", healthRoutes(minioClient));
-app.use("/", albumRoutes(minioClient, processFilesInBackground)); // Pass processFilesInBackground
+app.use("/", albumRoutes(minioClient, { pendingJobs, processFilesInBackground })); // Pass processFilesInBackground and pendingJobs
 app.use("/", statRoutes(minioClient));
 
 async function initializeDatabase() {
