@@ -67,13 +67,12 @@ const sendSSEEvent = (jobId, eventType, data = {}) => {
 
   try {
     connection.write(message);
+    // Force a flush by writing an empty chunk
+    connection.write('');
     debugSSE(`[server.js (72)] Event "${eventType}" sent to job ${jobId}`);
 
     if (eventType === "complete") {
-      // Send final message
-      connection.write(`data: ${JSON.stringify(eventData)}\n\n`);
-
-      // End the stream
+      // Send final message and end the stream
       connection.end();
       sseConnections.delete(jobId);
     }
@@ -165,7 +164,7 @@ async function processFilesInBackground(
       }
 
       // Small delay to ensure event ordering and prevent overwhelming the client
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     const processingTime = Date.now() - startTime;
@@ -246,11 +245,19 @@ app.get("/processing-status/:jobId", (req, res) => {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
-    Connection: "keep-alive",
+    "Connection": "keep-alive",
     "Access-Control-Allow-Origin": "*",
-    "Transfer-Encoding": "chunked",
     "Access-Control-Allow-Headers": "Cache-Control",
+    "X-Accel-Buffering": "no", // Disable nginx buffering if present
   });
+
+  // Disable Nagle's algorithm to reduce buffering
+  if (res.socket) {
+    res.socket.setNoDelay(true);
+  }
+
+  // Flush headers immediately
+  res.flushHeaders();
 
   // Store connection
   sseConnections.set(jobId, res);
