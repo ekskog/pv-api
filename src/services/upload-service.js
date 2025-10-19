@@ -62,11 +62,17 @@ class UploadService {
     } catch (error) {
       throw new Error(`Failed processing ${originalname}: ${error.message}`);
     } finally {
-      if (global.gc) {
-        global.gc();
-        const memAfterGC = process.memoryUsage();
-        //debugUpload(`[(69)]: Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
+      // Release buffer memory
+      if (file.buffer) {
+        file.buffer = null;
       }
+      // Note: global.gc() is not available in production (requires --expose-gc flag)
+      // Uncomment below if running with --expose-gc for manual GC triggering
+      // if (global.gc) {
+      //   global.gc();
+      //   const memAfterGC = process.memoryUsage();
+      //   //debugUpload(`[(69)]: Memory after GC: ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)}MB heap, ${(memAfterGC.rss / 1024 / 1024).toFixed(2)}MB RSS`);
+      // }
     }
   }
 
