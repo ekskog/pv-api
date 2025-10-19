@@ -1,51 +1,31 @@
-# Multi-stage build for smaller final image
-FROM node:22-alpine AS builder
-
-# Set working directory
-WORKDIR /app
-
-# Copy package files first for better caching
-COPY package*.json ./
-
-# Install ALL dependencies (including dev)
-RUN npm ci
-
-# Copy source code
-COPY src/ ./src/
-
-# Production stage
+# Base image with Node.js and Alpine for minimal footprint
 FROM node:22-alpine AS production
 
 # Install only runtime dependencies needed for sharp and heic processing
 RUN apk add --no-cache \
-    vips-dev \
+    vips \
     libc6-compat
 
 # Set working directory
 WORKDIR /app
 
 # Copy package files and install only production dependencies
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+COPY --chown=1001:1001 package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy source code
-COPY src/ ./src/
+# Copy source code with correct ownership
+COPY --chown=1001:1001 src/ ./src/
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S photovault -u 1001
-
-# Change ownership of app directory more efficiently
-RUN chown -R photovault:nodejs /app
+    adduser -S photovault -u 1001 -G nodejs
 
 USER photovault
 
 # Expose port
 EXPOSE 3001
 
-# Health check - longer intervals for heavy image processing
-HEALTHCHECK --interval=600s --timeout=30s --start-period=30s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+# Health check is handled by Kubernetes, so no need here
 
 # Start the application
 CMD ["npm", "start"]
