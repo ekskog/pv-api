@@ -287,7 +287,7 @@ class Database {
     const connection = await this.pool.getConnection();
     try {
       const [rows] = await connection.execute(
-        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE name = ?",
+        "SELECT id, name, slug, path, description, created_at, updated_at FROM albums WHERE TRIM(name) = TRIM(?)",
         [name]
       );
 
