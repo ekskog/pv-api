@@ -3,11 +3,8 @@
 const express = require("express");
 const {
   AuthService,
-  authenticateToken,
-  requireRole,
 } = require("../middleware/authMW");
 const router = express.Router();
-const database = require("../services/database-service");
 const debug = require("debug");
 const debugAuth = debug("photovault:auth");
 // debugAuth('Auth middleware initialized');
