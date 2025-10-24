@@ -27,21 +27,21 @@ const healthCheck = (minioClient) => async (req, res) => {
   // MinIO check
   try {
     minioHealthy = await checkMinioHealth(minioClient);
-    // console.log('✅ MinIO is up and reachable');
+    debugHealth('✅ MinIO is up and reachable');
   } catch (err) {
-    // console.error('❌ MinIO is down or unreachable:', err.message);
+    debugHealth('❌ MinIO is down or unreachable:', err.message);
   }
 
   // Database check
   try {
     databaseHealthy = await database.isHealthy();
     if (databaseHealthy) {
-      // console.log('✅ Database is up and reachable');
+      debugHealth('✅ Database is up and reachable');
     } else {
-      // console.log('❌ Database is down or unreachable');
+      debugHealth('❌ Database is down or unreachable');
     }
   } catch (err) {
-    // console.error('❌ Database health check failed:', err.message);
+    debugHealth('❌ Database health check failed:', err.message);
   }
 
   // Converter check
@@ -60,12 +60,12 @@ const healthCheck = (minioClient) => async (req, res) => {
 
     if (response.ok) {
       converterHealthy = true;
-      //debugHealth(`[health.js - line 42]: Converter is healthy`);
+      debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
-      //debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
+      debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
     }
   } catch (error) {
-    //debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
+    debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
   }
 
   // Compose response

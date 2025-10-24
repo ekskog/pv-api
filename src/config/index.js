@@ -11,7 +11,7 @@ const config = {
   // CORS Configuration
   cors: {
     origins: [
-      "https://photos.hbvu.su",
+      "https://photos.ekskog.me",
       "http://localhost:5173", // Development
       "http://localhost:3000", // Alternative dev port
     ],
@@ -87,7 +87,7 @@ const config = {
   kubernetes: {
     serviceName: process.env.K8S_SERVICE_NAME || 'photovault-api-service',
     namespace: process.env.K8S_NAMESPACE || 'photovault',
-    publicUrl: process.env.PUBLIC_API_URL || 'https://vault-api.hbvu.su',
+    publicUrl: process.env.PUBLIC_API_URL || 'https://vault-api.ekskog.xyz',
   },
 };
 
