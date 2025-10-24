@@ -13,12 +13,6 @@ const LOG_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes in milliseconds
 // Health check route
 const healthCheck = (minioClient) => async (req, res) => {
   const now = Date.now();
-  const shouldLog = !hasLoggedFirstSuccess || (now - lastHealthLogTime) >= LOG_INTERVAL_MS;
-
-  if (shouldLog) {
-    debugHealth(`Health check from ${req.ip} at ${new Date().toISOString()}`);
-    lastHealthLogTime = now;
-  }
 
   let minioHealthy = false;
   let converterHealthy = false;
@@ -27,21 +21,21 @@ const healthCheck = (minioClient) => async (req, res) => {
   // MinIO check
   try {
     minioHealthy = await checkMinioHealth(minioClient);
-    debugHealth('✅ MinIO is up and reachable');
+    debugHealth("✅ MinIO is up and reachable");
   } catch (err) {
-    debugHealth('❌ MinIO is down or unreachable:', err.message);
+    debugHealth("❌ MinIO is down or unreachable:", err.message);
   }
 
   // Database check
   try {
     databaseHealthy = await database.isHealthy();
     if (databaseHealthy) {
-      debugHealth('✅ Database is up and reachable');
+      debugHealth("✅ Database is up and reachable");
     } else {
-      debugHealth('❌ Database is down or unreachable');
+      debugHealth("❌ Database is down or unreachable");
     }
   } catch (err) {
-    debugHealth('❌ Database health check failed:', err.message);
+    debugHealth("❌ Database health check failed:", err.message);
   }
 
   // Converter check
@@ -62,7 +56,9 @@ const healthCheck = (minioClient) => async (req, res) => {
       converterHealthy = true;
       debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
-      debugHealth(`[health.js - line 44]: Converter unhealthy: ${response.status}`);
+      debugHealth(
+        `[health.js - line 44]: Converter unhealthy: ${response.status}`
+      );
     }
   } catch (error) {
     debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
@@ -73,14 +69,11 @@ const healthCheck = (minioClient) => async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  if (shouldLog) {
-    debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
-    if (isHealthy && !hasLoggedFirstSuccess) {
-      hasLoggedFirstSuccess = true;
-    }
-  }
+  debugHealth(
+    `Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`
+  );
 
-  res.status(code).json({
+  let result = {
     status,
     timestamp: new Date().toISOString(),
     minio: {
@@ -95,7 +88,10 @@ const healthCheck = (minioClient) => async (req, res) => {
       connected: converterHealthy,
       endpoint: config.converter.url,
     },
-  });
+  }
+
+  debugHealth(`Health check response: ${JSON.stringify(result)}`);
+  res.status(code).json(result);
 };
 
 async function checkMinioHealth(minioClient) {
