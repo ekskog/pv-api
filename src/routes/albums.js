@@ -12,7 +12,6 @@ const config = require("../config");
 
 const debug = require("debug");
 const debugAlbum = debug("photovault:album");
-const debugMinio = debug("photovault:minio");
 const debugUpload = debug("photovault:upload");
 
 // Configure multer for file uploads (store in memory)
@@ -24,6 +23,8 @@ const upload = multer({
 });
 
 const getAlbums = (minioClient) => async (req, res) => {
+  debugAlbum('🔍 Request origin:', req.headers.origin);
+  debugAlbum('🔍 Request headers:', req.headers);
   try {
     const albums = await database.getAllAlbums();
 
