@@ -14,6 +14,8 @@ const config = {
       "https://photos.ekskog.me",
       "http://localhost:5173", // Development
       "http://localhost:3000", // Alternative dev port
+      "capacitor://localhost",  // iOS Capacitor app
+      "ionic://localhost"       // Additional Capacitor fallback
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
