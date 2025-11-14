@@ -22,9 +22,7 @@ const upload = multer({
   },
 });
 
-const getAlbums = (minioClient) => async (req, res) => {
-  debugAlbum('🔍 Request origin:', req.headers.origin);
-  debugAlbum('🔍 Request headers:', req.headers);
+
   try {
     const albums = await database.getAllAlbums();
 

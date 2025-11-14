@@ -14,8 +14,23 @@ const cors = require("cors");
 const app = express();
 const PORT = config.server.port;
 
+// Middleware - Log all incoming requests BEFORE CORS
+app.use((req, res, next) => {
+  console.log('🔍 Incoming request from origin:', req.headers.origin);
+  console.log('🔍 Request method:', req.method);
+  console.log('🔍 Request path:', req.path);
+  next();
+});
+
 // Middleware
 app.use(cors(config.cors));
+
+// Log successful CORS checks
+app.use((req, res, next) => {
+  console.log('✅ Request passed CORS check');
+  next();
+});
+
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 
