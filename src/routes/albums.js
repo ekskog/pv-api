@@ -22,7 +22,7 @@ const upload = multer({
   },
 });
 
-
+const getAlbums = (minioClient) => async (req, res) => {
   try {
     const albums = await database.getAllAlbums();
 
