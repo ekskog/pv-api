@@ -23,7 +23,7 @@ RUN addgroup -g 1001 -S nodejs && \
 USER photovault
 
 # Expose port
-EXPOSE 3001
+EXPOSE 3000
 
 # Health check is handled by Kubernetes, so no need here
 
