@@ -24,12 +24,12 @@ const config = {
 
   // MinIO Configuration
   minio: {
-    endpoint: process.env.MINIO_ENDPOINT,
+    endpoint: process.env.MINIO_ENDPOINT || 'mjolnir',
     port: parseInt(process.env.MINIO_PORT) || 9000,
     useSSL: process.env.MINIO_USE_SSL === "true",
-    accessKey: process.env.MINIO_ACCESS_KEY,
-    secretKey: process.env.MINIO_SECRET_KEY,
-    bucketName: process.env.MINIO_BUCKET_NAME,
+    accessKey: process.env.MINIO_ACCESS_KEY || 'lucarv',
+    secretKey: process.env.MINIO_SECRET_KEY || 'lucaPWD4MinI0-MJR',
+    bucketName: process.env.MINIO_BUCKET_NAME || 'photovault',
   },
 
   // Upload Configuration
@@ -111,6 +111,19 @@ const validateConfig = () => {
     throw new Error(`Missing required configuration: ${missing.join(', ')}`);
   }
 };
+
+console.log("Configuration loaded:", {
+    database: {
+    host: config.database.host,
+    port: config.database.port,
+    user: config.database.user,
+    database: config.database.database,
+  }, minio: {
+    endpoint: config.minio.endpoint,
+    port: config.minio.port,
+    bucketName: config.minio.bucketName
+  },
+});
 
 module.exports = {
   ...config,

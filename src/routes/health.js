@@ -21,7 +21,7 @@ const healthCheck = (minioClient) => async (req, res) => {
   // MinIO check
   try {
     minioHealthy = await checkMinioHealth(minioClient);
-    debugHealth("✅ MinIO is up and reachable");
+    // debugHealth("✅ MinIO is up and reachable");
   } catch (err) {
     debugHealth("❌ MinIO is down or unreachable:", err.message);
   }
@@ -30,7 +30,7 @@ const healthCheck = (minioClient) => async (req, res) => {
   try {
     databaseHealthy = await database.isHealthy();
     if (databaseHealthy) {
-      debugHealth("✅ Database is up and reachable");
+      // debugHealth("✅ Database is up and reachable");
     } else {
       debugHealth("❌ Database is down or unreachable");
     }
@@ -54,7 +54,7 @@ const healthCheck = (minioClient) => async (req, res) => {
 
     if (response.ok) {
       converterHealthy = true;
-      debugHealth(`[health.js - line 42]: Converter is healthy`);
+      // debugHealth(`[health.js - line 42]: Converter is healthy`);
     } else {
       debugHealth(
         `[health.js - line 44]: Converter unhealthy: ${response.status}`
@@ -69,9 +69,7 @@ const healthCheck = (minioClient) => async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  debugHealth(
-    `Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`
-  );
+  debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
 
   let result = {
     status,
@@ -90,7 +88,7 @@ const healthCheck = (minioClient) => async (req, res) => {
     },
   }
 
-  debugHealth(`Health check response: ${JSON.stringify(result)}`);
+  //debugHealth(`Health check response: ${JSON.stringify(result)}`);
   res.status(code).json(result);
 };
 
