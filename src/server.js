@@ -16,9 +16,11 @@ const PORT = config.server.port;
 
 // Middleware - Log all incoming requests BEFORE CORS
 app.use((req, res, next) => {
-  console.log('🔍 Incoming request from origin:', req.headers.origin);
-  console.log('🔍 Request method:', req.method);
-  console.log('🔍 Request path:', req.path);
+  /*
+  debugServer('🔍 Incoming request from origin:', req.headers.origin);
+  debugServer('🔍 Request method:', req.method);
+  debugServer('🔍 Request path:', req.path);
+  */
   next();
 });
 
@@ -27,7 +29,7 @@ app.use(cors(config.cors));
 
 // Log successful CORS checks
 app.use((req, res, next) => {
-  console.log('✅ Request passed CORS check');
+  // console.log('✅ Request passed CORS check');
   next();
 });
 
