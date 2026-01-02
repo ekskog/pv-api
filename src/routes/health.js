@@ -69,7 +69,7 @@ const healthCheck = (minioClient) => async (req, res) => {
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
+  //debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
 
   let result = {
     status,
