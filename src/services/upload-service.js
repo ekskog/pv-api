@@ -35,8 +35,10 @@ class UploadService {
     try {
       if (mimetype === "video/mp4" || mimetype === "video/mov" || mimetype === "video/avi" || mimetype === "video/quicktime") {
         uploadResult = await this.processVideoFile(file, bucketName, folderPath);
+        debugUpload(`[(38)]: Uploaded video file: ${originalname}`);
       } else {
         if (mimetype !== "image/heic" && mimetype !== "image/jpeg") return null;
+        debugUpload(`[(41)]: Processing image file: ${originalname}`);
 
         // PHOTOS ONLY
         // Step 1: Extract metadata
@@ -152,8 +154,6 @@ class UploadService {
           "X-Amz-Meta-Source": "iPhone",
         }
       );
-
-      console.timeEnd(videoTimer);
 
       return {
         originalName: file.originalname,

@@ -94,7 +94,7 @@ const sendSSEEvent = (jobId, eventType, data = {}) => {
       sseConnections.delete(jobId);
     }
   } catch (error) {
-    debugSSE(`[server.js (83)] Error sending to job ${jobId}: ${error.message}`);
+    debugSSE(`[server.js (97)] Error sending to job ${jobId}: ${error.message}`);
     sseConnections.delete(jobId);
   }
 };
@@ -107,7 +107,7 @@ async function processFilesInBackground(
   startTime,
   jobId
 ) {
-  debugUpload(`[server.js (97)] Starting background processing for job ${jobId} with ${files.length} files`);
+  debugUpload(`[server.js (110)] Starting background processing for job ${jobId} with ${files.length} files`);
 
   try {
     const uploadResults = [];
@@ -129,7 +129,7 @@ async function processFilesInBackground(
 
     for (let i = 0; i < totalFiles; i++) {
       const file = files[i];
-      debugUpload(`[server.js (106)] Processing file ${i + 1}/${totalFiles}: ${file.originalname}`);
+      debugUpload(`[server.js (132)] Processing file ${i + 1}/${totalFiles}: ${file.originalname}`);
 
       try {
         // Process the individual file
@@ -139,8 +139,7 @@ async function processFilesInBackground(
           folderPath
         );
         uploadResults.push(result);
-
-        debugUpload(`[server.js (114)] Successfully processed: ${file.originalname}`);
+        debugUpload(`[server.js (142)] Successfully processed: ${file.originalname}`);
 
         // Send progress update after each successful file upload
         const progressPercent = Math.round(((i + 1) / totalFiles) * 100);
@@ -158,7 +157,7 @@ async function processFilesInBackground(
         });
 
       } catch (error) {
-        debugUpload(`[server.js (127)] Error processing file ${file.originalname}: ${error.message}`);
+        debugUpload(`[server.js (160)] Error processing file ${file.originalname}: ${error.message}`);
         errors.push({
           filename: file.originalname,
           error: error.message,
