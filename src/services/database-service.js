@@ -259,21 +259,28 @@ class Database {
         return { result: false, message: "Album with this path already exists" };
       }
 
-      // Insert album without slug first to get the ID
+      // Generate initial slug from name (will be updated with ID-based slug after insert)
+      const initialSlug = name.toLowerCase().replace(/\./g, '-') || '';
+      const now = new Date();
+
+      // Insert album with slug, created_at, and updated_at to satisfy NOT NULL constraints
       const [result] = await connection.execute(
-        "INSERT INTO albums (name, path, description, month, year, counter) VALUES (?, ?, ?, ?, ?, ?)",
-        [name, path, description, month, year, 0]
+        "INSERT INTO albums (name, slug, path, description, month, year, counter, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [name, initialSlug, path, description, month, year, 0, now, now]
       );
 
       const albumId = result.insertId;
 
-      // Generate slug using the ID and update the record
-      const slug = makeSlugWithId(name, albumId);
+      // Generate final slug using the ID and update the record
+      const finalSlug = makeSlugWithId(name, albumId);
       
-      await connection.execute(
-        "UPDATE albums SET slug = ? WHERE id = ?",
-        [slug, albumId]
-      );
+      // Only update if the slug changed (i.e., if name was empty and we used ID)
+      if (finalSlug !== initialSlug) {
+        await connection.execute(
+          "UPDATE albums SET slug = ? WHERE id = ?",
+          [finalSlug, albumId]
+        );
+      }
 
       // Return the complete album data
       return { result: true, message: "Album created successfully" };
