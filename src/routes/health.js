@@ -4,7 +4,11 @@ const debugHealth = debug("photovault:health");
 const config = require("../config");
 const database = require("../services/database-service");
 
-// Health check route
+/**
+ * Health check route logic
+ * Decoupled to allow the pod to stay alive (200 OK) even if non-critical 
+ * services like Temporal or MinIO are still warming up or misconfigured.
+ */
 const healthCheck = (minioClient, temporalClient) => async (req, res) => {
   let minioHealthy = false;
   let converterHealthy = false;
@@ -18,7 +22,7 @@ const healthCheck = (minioClient, temporalClient) => async (req, res) => {
     debugHealth("❌ MinIO unreachable:", err.message);
   }
 
-  // 2. Database check
+  // 2. Database check (This is our "Liveness" anchor)
   try {
     databaseHealthy = await database.isHealthy();
   } catch (err) {
@@ -28,14 +32,22 @@ const healthCheck = (minioClient, temporalClient) => async (req, res) => {
   // 3. Temporal check
   try {
     if (temporalClient) {
-      //describeNamespace confirms the connection is active and functional
-      await temporalClient.workflowService.describeNamespace({
-        namespace: "default",
-      });
+      // Use a timeout to prevent the health check from hanging the gRPC call
+      // if the TEMPORAL_ADDRESS is wrong or the namespace doesn't exist.
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Temporal gRPC Timeout")), 2000)
+      );
+
+      await Promise.race([
+        temporalClient.workflowService.describeNamespace({
+          namespace: "default",
+        }),
+        timeoutPromise,
+      ]);
       temporalHealthy = true;
     }
   } catch (err) {
-    debugHealth("❌ Temporal unreachable:", err.message);
+    debugHealth("❌ Temporal failure (Namespace 'default' likely missing or address wrong):", err.message);
   }
 
   // 4. Converter check
@@ -58,26 +70,42 @@ const healthCheck = (minioClient, temporalClient) => async (req, res) => {
     debugHealth(`❌ Converter failure: ${error.message}`);
   }
 
-  // Compose response
-  const isHealthy = minioHealthy && converterHealthy && databaseHealthy && temporalHealthy;
-  const status = isHealthy ? "healthy" : "degraded";
-  const code = isHealthy ? 200 : 503;
+  // --- LOGIC CHANGE START ---
+  
+  // We are "Ready" only if everything is perfect
+  const isReady = minioHealthy && converterHealthy && databaseHealthy && temporalHealthy;
+  
+  // We are "Alive" if the Database is connected. 
+  // If the DB is down, we actually want K8s to restart the pod.
+  // If only Temporal is down, we want to stay alive to fix it!
+  const isAlive = databaseHealthy;
+
+  const status = isReady ? "healthy" : "degraded";
+  const code = isAlive ? 200 : 503; 
 
   res.status(code).json({
     status,
     timestamp: new Date().toISOString(),
+    ready: isReady,
     services: {
       minio: { connected: minioHealthy },
       database: { connected: databaseHealthy },
       temporal: { connected: temporalHealthy },
       converter: { connected: converterHealthy }
+    },
+    checks: {
+      liveness: isAlive,
+      readiness: isReady
     }
   });
+  
+  // --- LOGIC CHANGE END ---
 };
 
 async function checkMinioHealth(minioClient) {
   try {
     if (!minioClient) return false;
+    // Simple check to see if we can talk to the bucket
     const stream = minioClient.listObjectsV2(config.minio.bucketName || "photovault", "", true);
     return await new Promise((resolve) => {
       let checked = false;
@@ -86,6 +114,8 @@ async function checkMinioHealth(minioClient) {
       });
       stream.on("end", () => { if (!checked) resolve(true); });
       stream.on("error", () => resolve(false));
+      // Safety timeout for the stream itself
+      setTimeout(() => { if (!checked) resolve(false); }, 2000);
     });
   } catch (err) {
     return false;
