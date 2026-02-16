@@ -383,7 +383,6 @@ app.use("/", healthRoutes(minioClient, temporalClient));
 app.use("/", albumRoutes(minioClient, { pendingJobs, processFilesInBackground })); // Pass processFilesInBackground and pendingJobs
 app.use("/", statRoutes(minioClient));
 // New Temporal Route for Bulk Uploads
-const temporalRoutes = require("./routes/temporalUploads");
 app.use("/bulk", temporalRoutes(temporalClient, config));
 
 async function initializeDatabase() {
