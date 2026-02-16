@@ -10,7 +10,7 @@ const debugDB = debug("photovault:server:database");
 const debugUpload = debug("photovault:server:upload");
 
 // temporal integration
-const { Connection, Client } = require("@temporalio/client");
+const { Connection, Client: TemporalClient } = require("@temporalio/client");
 
 const express = require("express");
 const cors = require("cors");
@@ -49,7 +49,7 @@ async function initTemporal() {
     const connection = await Connection.connect({
       address: process.env.TEMPORAL_ADDRESS || 'localhost:7233', // Adjust to your cluster address
     });
-    temporalClient = new Client({
+    temporalClient = new TemporalClient({
       connection,
       namespace: 'default',
     });
@@ -62,11 +62,11 @@ async function initTemporal() {
 
 // Minio Client Configuration
 
-const { Client } = require("minio");
+const { Client: MinioClient } = require("minio");
 // MinIO Client Configuration
 let minioClient;
 try {
-  minioClient = new Client({
+  minioClient = new MinioClient({
     endPoint: config.minio.endpoint,
     port: parseInt(config.minio.port),
     useSSL: config.minio.useSSL,
@@ -87,6 +87,7 @@ const userRoutes = require("./routes/user");
 const healthRoutes = require("./routes/health");
 const albumRoutes = require("./routes/albums");
 const statRoutes = require("./routes/stats");
+const temporalRoutes = require("./routes/temporalUploads"); // Added this for the new Temporal route
 
 // Store active SSE connections and pending jobs by job ID
 const sseConnections = new Map();
@@ -377,7 +378,8 @@ process.on("SIGINT", async () => {
 // Mount route modules with dependency injection
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
-app.use("/", healthRoutes(minioClient));
+// In server.js
+app.use("/", healthRoutes(minioClient, temporalClient));
 app.use("/", albumRoutes(minioClient, { pendingJobs, processFilesInBackground })); // Pass processFilesInBackground and pendingJobs
 app.use("/", statRoutes(minioClient));
 // New Temporal Route for Bulk Uploads

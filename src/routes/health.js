@@ -1,47 +1,47 @@
-// routes/health.js
 const express = require("express");
 const debug = require("debug");
 const debugHealth = debug("photovault:health");
-const config = require("../config"); // defaults to ./config/index.js
+const config = require("../config");
 const database = require("../services/database-service");
 
-// Health check logging state
-let lastHealthLogTime = 0;
-let hasLoggedFirstSuccess = false;
-const LOG_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes in milliseconds
-
 // Health check route
-const healthCheck = (minioClient) => async (req, res) => {
-  const now = Date.now();
-
+const healthCheck = (minioClient, temporalClient) => async (req, res) => {
   let minioHealthy = false;
   let converterHealthy = false;
   let databaseHealthy = false;
+  let temporalHealthy = false;
 
-  // MinIO check
+  // 1. MinIO check
   try {
     minioHealthy = await checkMinioHealth(minioClient);
-    // debugHealth("✅ MinIO is up and reachable");
   } catch (err) {
-    debugHealth("❌ MinIO is down or unreachable:", err.message);
+    debugHealth("❌ MinIO unreachable:", err.message);
   }
 
-  // Database check
+  // 2. Database check
   try {
     databaseHealthy = await database.isHealthy();
-    if (databaseHealthy) {
-      // debugHealth("✅ Database is up and reachable");
-    } else {
-      debugHealth("❌ Database is down or unreachable");
-    }
   } catch (err) {
-    debugHealth("❌ Database health check failed:", err.message);
+    debugHealth("❌ Database unreachable:", err.message);
   }
 
-  // Converter check
+  // 3. Temporal check
+  try {
+    if (temporalClient) {
+      //describeNamespace confirms the connection is active and functional
+      await temporalClient.workflowService.describeNamespace({
+        namespace: "default",
+      });
+      temporalHealthy = true;
+    }
+  } catch (err) {
+    debugHealth("❌ Temporal unreachable:", err.message);
+  }
+
+  // 4. Converter check
   try {
     const converterUrl = config.converter.url;
-    const timeout = parseInt(config.converter.timeout, 10);
+    const timeout = parseInt(config.converter.timeout, 10) || 5000;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -51,82 +51,49 @@ const healthCheck = (minioClient) => async (req, res) => {
     });
 
     clearTimeout(timer);
-
     if (response.ok) {
       converterHealthy = true;
-      // debugHealth(`[health.js - line 42]: Converter is healthy`);
-    } else {
-      debugHealth(
-        `[health.js - line 44]: Converter unhealthy: ${response.status}`
-      );
     }
   } catch (error) {
-    debugHealth(`[health.js - line 46]: Converter failure: ${error.message}`);
+    debugHealth(`❌ Converter failure: ${error.message}`);
   }
 
   // Compose response
-  const isHealthy = minioHealthy && converterHealthy && databaseHealthy;
+  const isHealthy = minioHealthy && converterHealthy && databaseHealthy && temporalHealthy;
   const status = isHealthy ? "healthy" : "degraded";
   const code = isHealthy ? 200 : 503;
 
-  //debugHealth(`Health check result: ${status} (MinIO: ${minioHealthy}, Database: ${databaseHealthy}, Converter: ${converterHealthy})`);
-
-  let result = {
+  res.status(code).json({
     status,
     timestamp: new Date().toISOString(),
-    minio: {
-      connected: minioHealthy,
-      endpoint: config.minio.endpoint,
-    },
-    database: {
-      connected: databaseHealthy,
-      type: "MariaDB",
-    },
-    converter: {
-      connected: converterHealthy,
-      endpoint: config.converter.url,
-    },
-  }
-
-  //debugHealth(`Health check response: ${JSON.stringify(result)}`);
-  res.status(code).json(result);
+    services: {
+      minio: { connected: minioHealthy },
+      database: { connected: databaseHealthy },
+      temporal: { connected: temporalHealthy },
+      converter: { connected: converterHealthy }
+    }
+  });
 };
 
 async function checkMinioHealth(minioClient) {
   try {
-    const stream = minioClient.listObjectsV2("photovault", "", true);
-
-    return await new Promise((resolve, reject) => {
+    if (!minioClient) return false;
+    const stream = minioClient.listObjectsV2(config.minio.bucketName || "photovault", "", true);
+    return await new Promise((resolve) => {
       let checked = false;
-
-      stream.on("data", (obj) => {
-        if (!checked) {
-          checked = true;
-          resolve(true); // Bucket is accessible and contains objects
-        }
+      stream.on("data", () => {
+        if (!checked) { resolve(true); checked = true; }
       });
-
-      stream.on("end", () => {
-        if (!checked) {
-          resolve(true); // Bucket is accessible but empty
-        }
-      });
-
-      stream.on("error", (err) => {
-        console.error("MinIO health check failed:", err.message);
-        resolve(false); // Treat error as unhealthy
-      });
+      stream.on("end", () => { if (!checked) resolve(true); });
+      stream.on("error", () => resolve(false));
     });
   } catch (err) {
-    console.error("MinIO health check exception:", err.message);
     return false;
   }
 }
 
-// Export factory function that accepts dependencies
-
-module.exports = (minioClient, countAlbums) => {
-  const router = express.Router(); // <-- moved inside the function
-  router.get("/health", healthCheck(minioClient, countAlbums));
+module.exports = (minioClient, temporalClient) => {
+  const router = express.Router();
+  router.get("/health", healthCheck(minioClient, temporalClient));
   return router;
 };
