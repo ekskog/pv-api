@@ -19,6 +19,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@temporalio/client": "^1.14.1",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -31,6 +32,7 @@
     "minio": "^8.0.5",
     "multer": "^2.0.1",
     "mysql2": "^3.6.5",
+    "nanoid": "^5.1.6",
     "sharp": "^0.34.4",
     "uuid": "^11.1.0"
   },

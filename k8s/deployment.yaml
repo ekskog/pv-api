@@ -7,7 +7,7 @@ metadata:
     app: photovault-api
 spec:
   replicas: 1
-  revisionHistoryLimit: 0  # Changed from 1 to 0 - keeps no old ReplicaSets
+  revisionHistoryLimit: 0 
   selector:
     matchLabels:
       app: photovault-api
@@ -40,22 +40,24 @@ spec:
         volumeMounts:
         - name: log-storage
           mountPath: /app/logs
+        - name: nfs-vol
+          mountPath: /nfs-storage  # This is the "loading dock" for Temporal
         livenessProbe:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 30     # Increased - give app time to start
-          periodSeconds: 60           # Changed from 30min to 1min
-          timeoutSeconds: 10          # Reduced from 30s
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 3000
           initialDelaySeconds: 10
-          periodSeconds: 10           # Reduced from 15s for faster detection
-          timeoutSeconds: 5           # Reduced from 30s
-          failureThreshold: 3         # Reduced from 5 for faster failure detection
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           requests:
             memory: "128Mi"
@@ -66,4 +68,6 @@ spec:
       volumes:
       - name: log-storage
         emptyDir: {}
----
+      - name: nfs-vol
+        persistentVolumeClaim:
+          claimName: nfs-photovault-claim # Ensure this PVC exists in 'photovault' namespace

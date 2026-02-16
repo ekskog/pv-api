@@ -22,6 +22,13 @@ const config = {
     allowedHeaders: ["Content-Type", "Authorization", "x-auth-token"],
   },
 
+  // Temporal & Shared Storage
+  temporal: {
+    address: process.env.TEMPORAL_ADDRESS || 'localhost:7233',
+    taskQueue: 'image-processing',
+    nfsPath: process.env.NFS_PATH || '/nfs-storage', // The shared mount point
+  },
+
   // MinIO Configuration
   minio: {
     endpoint: process.env.MINIO_ENDPOINT || 'mjolnir',

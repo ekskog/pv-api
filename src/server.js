@@ -9,6 +9,9 @@ const debugSSE = debug("photovault:server:sse");
 const debugDB = debug("photovault:server:database");
 const debugUpload = debug("photovault:server:upload");
 
+// temporal integration
+const { Connection, Client } = require("@temporalio/client");
+
 const express = require("express");
 const cors = require("cors");
 const app = express();
@@ -36,7 +39,29 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "2gb" })); // Increased for video uploads
 app.use(express.urlencoded({ limit: "2gb", extended: true })); // Increased for video uploads
 
-// Import and Initialize services
+// Import and Initialize services and dependencies
+
+// Temporal Client Configuration
+let temporalClient;
+
+async function initTemporal() {
+  try {
+    const connection = await Connection.connect({
+      address: process.env.TEMPORAL_ADDRESS || 'localhost:7233', // Adjust to your cluster address
+    });
+    temporalClient = new Client({
+      connection,
+      namespace: 'default',
+    });
+    debugServer("✓ Temporal Client initialized");
+  } catch (err) {
+    debugServer(`Temporal initialization error: ${err.message}`);
+    temporalClient = null;
+  }
+}
+
+// Minio Client Configuration
+
 const { Client } = require("minio");
 // MinIO Client Configuration
 let minioClient;
@@ -323,6 +348,7 @@ async function startServer() {
   try {
     // Initialize database connection
     let connectionPool = await initializeDatabase();
+    await initTemporal();
 
     //debugServer(`[server.js] Database initialized successfully`);
     // Start HTTP server
@@ -354,6 +380,9 @@ app.use("/user", userRoutes);
 app.use("/", healthRoutes(minioClient));
 app.use("/", albumRoutes(minioClient, { pendingJobs, processFilesInBackground })); // Pass processFilesInBackground and pendingJobs
 app.use("/", statRoutes(minioClient));
+// New Temporal Route for Bulk Uploads
+const temporalRoutes = require("./routes/temporalUploads");
+app.use("/bulk", temporalRoutes(temporalClient, config));
 
 async function initializeDatabase() {
   try {

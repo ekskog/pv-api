@@ -11,3 +11,11 @@ data:
   # AVIF Converter Services
   AVIF_CONVERTER_URL: "http://avif-converter-service.photovault.svc.cluster.local:3000"
   AVIF_CONVERTER_TIMEOUT: "300000"
+
+  # Temporal Configuration
+  # This points to the Temporal Frontend service in your cluster
+  TEMPORAL_ADDRESS: "temporal-frontend.temporal.svc.cluster.local:7233"
+  
+  # NFS Storage Path
+  # This must match the mountPath in your Deployment's volumeMounts
+  NFS_PATH: "/nfs-storage"
