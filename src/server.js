@@ -351,6 +351,9 @@ async function startServer() {
     let connectionPool = await initializeDatabase();
     await initTemporal();
 
+    app.use("/bulk", temporalRoutes(temporalClient, config));
+    app.use("/", healthRoutes(minioClient, temporalClient));    
+
     //debugServer(`[server.js] Database initialized successfully`);
     // Start HTTP server
     app.listen(PORT, () => {
@@ -379,11 +382,8 @@ process.on("SIGINT", async () => {
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 // In server.js
-app.use("/", healthRoutes(minioClient, temporalClient));
 app.use("/", albumRoutes(minioClient, { pendingJobs, processFilesInBackground })); // Pass processFilesInBackground and pendingJobs
 app.use("/", statRoutes(minioClient));
-// New Temporal Route for Bulk Uploads
-app.use("/bulk", temporalRoutes(temporalClient, config));
 
 async function initializeDatabase() {
   try {
