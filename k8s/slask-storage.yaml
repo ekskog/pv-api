@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: nfs-slask-claim
+  name: nfs-photovault-claim
   namespace: photovault
 spec:
   accessModes:

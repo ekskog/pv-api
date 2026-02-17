@@ -10,75 +10,108 @@ const path = require('path');
 const upload = multer({ storage: multer.memoryStorage() });
 
 module.exports = (temporalClient, config) => {
-  
-  /**
-   * POST /upload/:folder
-   * Logic: Ingest files, write to NFS, but HOLD the Temporal workflow call.
-   */
-  router.post("/upload/:folder", upload.array("images"), async (req, res) => {
-    try {
-      const { folder } = req.params; 
-      const files = req.files;
 
-      if (!files || files.length === 0) {
-        return res.status(400).json({ error: 'No files uploaded' });
-      }
+    /**
+     * POST /bulk/upload/:folder
+     * Logic: Returns 202 instantly, processes NFS and Temporal in the background.
+     */
+    router.post("/upload/:folder", upload.array("images"), (req, res) => {
+        const { folder } = req.params;
+        const files = req.files;
+        const batchId = nanoid();
 
-      const batchId = nanoid();
-      const workflowId = `batch-${batchId}`;
-      const batchDir = path.join(config.temporal.nfsPath || '/nfs-storage', batchId);
+        // 1. Immediate Validation (Synchronous)
+        if (!files || files.length === 0) {
+            return res.status(400).json({ error: 'No files uploaded' });
+        }
 
-      // Create the directory on the NFS
-      await fs.mkdir(batchDir, { recursive: true });
+        // 2. Respond immediately - connection closes for the user HERE
+        res.status(202).json({
+            success: true,
+            batchId,
+            message: "Accepted: Processing started in background.",
+            imageCount: files.length,
+            folder
+        });
 
-      // Map and write the files to the NFS
-      const imagePaths = await Promise.all(
-        files.map(async (file) => {
-          const filePath = path.join(batchDir, file.originalname);
-          await fs.writeFile(filePath, file.buffer);
-          
-          const detectedType = mime.lookup(file.originalname);
-          return {
-            filename: file.originalname,
-            path: filePath,
-            contentType: detectedType || file.mimetype,
-          };
-        })
-      );
+        // 3. Background Task (Asynchronous / Non-blocking)
+        setImmediate(async () => {
+            try {
+                // Ensure we have a base path from config or default
+                const nfsBase = config.temporal?.nfsPath || '/nfs-storage';
+                const batchDir = path.join(nfsBase, batchId);
 
-      /* * TEMPORAL CALL IS CURRENTLY DISABLED FOR STAGING TEST
-       * await temporalClient.workflow.start('processBatchImages', {
-        taskQueue: config.temporal.taskQueue || 'image-processing',
-        workflowId,
-        args: [{ batchId, batchDir, images: imagePaths, folder }],
-      });
-      */
+                // Create directory on NFS
+                await fs.mkdir(batchDir, { recursive: true });
 
-      res.json({
-        success: true,
-        message: "STAGING TEST: Files written to NFS successfully.",
-        folder,
-        batchId,
-        batchDir,
-        imageCount: imagePaths.length,
-        filesSaved: imagePaths.map(p => p.filename)
-      });
+                // Map and write the files to the NFS
+                const imagePaths = await Promise.all(
+                    files.map(async (file) => {
+                        const filePath = path.join(batchDir, file.originalname);
+                        await fs.writeFile(filePath, file.buffer);
+                        
+                        const detectedType = mime.lookup(file.originalname);
+                        return {
+                            filename: file.originalname,
+                            path: filePath,
+                            contentType: detectedType || file.mimetype,
+                        };
+                    })
+                );
 
-    } catch (error) {
-      console.error('Upload error:', error);
-      res.status(500).json({ error: 'Failed to write files to NFS', details: error.message });
-    }
-  });
+                console.log(`[Background] Files staged for batch ${batchId} at ${batchDir}`);
 
-  // Keep the status route (it will just return 404 or error since no workflow started)
-  router.get('/status/:workflowId', async (req, res) => {
-     res.status(501).json({ message: "Workflow integration currently disabled for staging test" });
-  });
+                // 4. Trigger Temporal
+                // Verify client exists before calling
+                if (temporalClient) {
+                    await temporalClient.workflow.start('processBatchImages', {
+                        taskQueue: config.temporal?.taskQueue || 'image-processing',
+                        workflowId: `batch-${batchId}`,
+                        args: [{ batchId, batchDir, images: imagePaths, folder }],
+                    });
+                    console.log(`[Background] Workflow started for batch ${batchId}`);
+                } else {
+                    console.warn(`[Background] Temporal Client not initialized. Batch ${batchId} staged but not started.`);
+                }
 
-  // Keep your sanity check
-  router.get("/test", async (req, res) => {
-    res.json({ success: true, message: "Route is active and NFS is ready for staging." });
-  });
+            } catch (error) {
+                // Since the client is long gone, we must log detailed errors here
+                console.error(`[CRITICAL BACKGROUND FAILURE] Batch ${batchId}:`, error);
+            }
+        });
+    });
 
-  return router;
+    /**
+     * Status route to check on the workflow
+     */
+    router.get('/status/:workflowId', async (req, res) => {
+        if (!temporalClient) {
+            return res.status(503).json({ error: "Temporal client not available" });
+        }
+        try {
+            const handle = temporalClient.workflow.getHandle(req.params.workflowId);
+            const description = await handle.describe();
+            res.json({
+                workflowId: req.params.workflowId,
+                status: description.status.name,
+                startTime: description.startTime
+            });
+        } catch (err) {
+            res.status(404).json({ error: "Workflow not found", message: err.message });
+        }
+    });
+
+    /**
+     * Sanity check route
+     */
+    router.get("/test", async (req, res) => {
+        res.json({ 
+            success: true, 
+            message: "Route is active.",
+            nfsPath: config.temporal?.nfsPath || '/nfs-storage',
+            temporalConnected: !!temporalClient
+        });
+    });
+
+    return router;
 };
