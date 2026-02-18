@@ -1,0 +1,30 @@
+# Health probe configuration — aligned with the health route's internal timeouts.
+#
+# Internal check budgets (all run concurrently):
+#   MinIO stream:      3 s max
+#   Temporal gRPC:     4 s max   ← was 2 s, raised to avoid false negatives
+#   Converter fetch:   4 s max
+#   Database:          ~instant (connection pool ping)
+#
+# Worst-case route response time ≈ 4 s (concurrent, bounded by slowest check)
+#
+# Probe timeoutSeconds must be > worst-case route time + network overhead.
+# 8 s gives ~4 s headroom.
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 60    # Give the app time to connect to its dependencies
+  periodSeconds: 300         # Liveness is a crash-guard; no need to check frequently
+  timeoutSeconds: 8          # > 4 s internal timeout + network overhead
+  failureThreshold: 5        # 5 consecutive failures before restart (~25 min)
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 10    # Start checking soon after container starts
+  periodSeconds: 10          # Check every 10 s
+  timeoutSeconds: 8          # Must match liveness — same route, same worst-case latency
+  failureThreshold: 3        # Remove from service after 3 consecutive failures (~30 s)

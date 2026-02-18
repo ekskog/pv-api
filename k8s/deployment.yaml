@@ -46,18 +46,18 @@ spec:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 60
-          periodSeconds: 300
-          timeoutSeconds: 10
-          failureThreshold: 5
+          initialDelaySeconds: 60    # Give the app time to connect to its dependencies
+          periodSeconds: 300         # Liveness is a crash-guard; no need to check frequently
+          timeoutSeconds: 8          # > 4 s internal timeout + network overhead
+          failureThreshold: 5        # 5 consecutive failures before restart (~25 min)
         readinessProbe:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: 10    # Start checking soon after container starts
+          periodSeconds: 10          # Check every 10 s
+          timeoutSeconds: 8          # Must match liveness — same route, same worst-case latency
+          failureThreshold: 3        # Remove from service after 3 consecutive failures (~30 s)
         resources:
           requests:
             memory: "128Mi"
