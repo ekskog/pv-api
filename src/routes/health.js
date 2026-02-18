@@ -9,11 +9,11 @@ let hasReportedHealthy = false;
 
 /**
  * Temporal: getSystemInfo is the lightest gRPC call available.
- * It confirms connectivity without metadata/DB overhead.
  */
 async function checkTemporalHealth(temporalClient) {
   if (!temporalClient?.workflowService) return false;
   try {
+    // Shallow gRPC ping - confirms server is responding
     await temporalClient.workflowService.getSystemInfo({}, { timeout: 1000 });
     return true;
   } catch (err) {
@@ -23,7 +23,7 @@ async function checkTemporalHealth(temporalClient) {
 }
 
 /**
- * MinIO: listBuckets is a standard authenticated connectivity check.
+ * MinIO: listBuckets confirms credentials and connectivity.
  */
 async function checkMinioHealth(minioClient) {
   if (!minioClient) return false;
@@ -37,7 +37,7 @@ async function checkMinioHealth(minioClient) {
 }
 
 /**
- * Converter: Standard GET /health fetch with AbortController.
+ * Converter: Standard GET /health fetch.
  */
 async function checkConverterHealth() {
   const url = config.converter?.url;
@@ -75,7 +75,7 @@ const healthCheck = (minioClient, temporalClient) => async (req, res) => {
     // Liveness: Process stays alive as long as DB is reachable
     const isAlive = dUp;
 
-    // Reporting logic
+    // Reporting logic - Silences after first full success
     if (!hasReportedHealthy && isReady) {
       console.log("✅ ALL SERVICES REACHABLE: Health checks are now silencing.");
       hasReportedHealthy = true;
@@ -91,7 +91,7 @@ const healthCheck = (minioClient, temporalClient) => async (req, res) => {
       }
     });
   } catch (err) {
-    // Final barrier to prevent process crash
+    // Safety fallback
     res.status(200).json({ ready: true, status: "error_mitigated" });
   }
 };
@@ -102,9 +102,5 @@ module.exports = (minioClient, temporalClient) => {
   return router;
 };
 
-// Simple connectivity nudge for startup
-module.exports.warmTemporalChannel = (temporalClient) => {
-  if (temporalClient?.workflowService?.getSystemInfo) {
-    temporalClient.workflowService.getSystemInfo({}).catch(() => {});
-  }
-};
+// No-op for the old warm-up logic
+module.exports.warmTemporalChannel = () => {};
