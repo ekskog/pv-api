@@ -51,7 +51,7 @@ async function initTemporal() {
     });
     temporalClient = new TemporalClient({
       connection,
-      namespace: 'photovault',
+      namespace: 'photovaul',
     });
     debugServer("✓ Temporal Client initialized");
   } catch (err) {
@@ -347,23 +347,24 @@ app.get("/processing-status/:jobId", (req, res) => {
 // Start server with database initialization
 async function startServer() {
   try {
-    await initializeDatabase();
+    // Initialize database connection
+    let connectionPool = await initializeDatabase();
     await initTemporal();
 
-    // MOUNT ALL ROUTES HERE - Inside the async block after init
     app.use("/bulk", temporalRoutes(temporalClient, config));
-    app.use("/", healthRoutes(minioClient, temporalClient)); 
-    app.use("/auth", authRoutes);
-    const userRoutes = require("./routes/user"); // Ensure imported
-    app.use("/user", userRoutes);
-    app.use("/", albumRoutes(minioClient, { pendingJobs, processFilesInBackground }));
-    app.use("/", statRoutes(minioClient));
+    app.use("/", healthRoutes(minioClient, temporalClient));    
 
+    //debugServer(`[server.js] Database initialized successfully`);
+    // Start HTTP server
     app.listen(PORT, () => {
+      const k8sService = config.kubernetes.serviceName;
+      const k8sNamespace = config.kubernetes.namespace || "photovault";
       debugServer(`Starting PhotoVault ${new Date()}...`);
-      debugServer(`> PhotoVault API server running on port ${PORT}`);
+      debugServer(        `> PhotoVault API server running on port ${config.server.port}`      );
+      
     });
   } catch (error) {
+    //debugServer(`[server.js] Failed to start server:`, error.message);
     process.exit(1);
   }
 }
