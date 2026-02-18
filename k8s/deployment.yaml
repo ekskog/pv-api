@@ -46,18 +46,18 @@ spec:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 60      # Check once a minute
-          timeoutSeconds: 2      # Fast check for liveness
-          failureThreshold: 3
+          initialDelaySeconds: 120
+          periodSeconds: 3600        # Check once per hour
+          timeoutSeconds: 15         # Very generous
+          failureThreshold: 1
         readinessProbe:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 15 
-          timeoutSeconds: 10     # Give the "Ready" check more time for gRPC handshakes
-          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 300         # Check every 5 minutes
+          timeoutSeconds: 15
+          failureThreshold: 2
         resources:
           requests:
             memory: "128Mi"
