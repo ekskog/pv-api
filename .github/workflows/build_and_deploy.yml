@@ -21,14 +21,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 
+          fetch-depth: 2
 
       - name: Set Environment Variables
         run: |
-          # Adding RUN_NUMBER to the tag to force K8s to pull a fresh image
-          TAG="${{ github.run_number }}-${{ github.sha }}"
-          echo "IMAGE_TAG=${{ env.IMAGE_NAME }}:$TAG" >> $GITHUB_ENV
-          echo "SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)" >> $GITHUB_ENV
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          # Use run number to ensure K8s sees a unique version string
+          echo "IMAGE_TAG=${{ env.IMAGE_NAME }}:${{ github.run_number }}-$SHORT_SHA" >> $GITHUB_ENV
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
 
       - name: Check if app source code changed
         id: check_changes
@@ -58,7 +58,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          # FORCE NO CACHE to fix the corrupted package.json layer
+          # THE CRITICAL FIX: Kill the cache to fix the corrupted package.json
           no-cache: true 
           tags: |
             ${{ env.IMAGE_TAG }}
@@ -80,18 +80,12 @@ jobs:
             --kubeconfig=kubeconfig.yaml \
             --dry-run=client -o yaml | kubectl apply -f - --kubeconfig=kubeconfig.yaml
 
-      - name: Update Deployment Image
+      - name: Update API Deployment
         run: |
-          echo "🚀 Deploying image: ${{ env.IMAGE_TAG }}"
+          echo "🚀 Updating API to image: ${{ env.IMAGE_TAG }}"
           
-          # Update API
           kubectl set image deployment/photovault-api \
             photovault-api=${{ env.IMAGE_TAG }} \
-            --namespace=photovault --kubeconfig=kubeconfig.yaml
-          
-          # Update Worker (This ensures they use the same fresh build)
-          kubectl set image deployment/pv-worker \
-            pv-worker=${{ env.IMAGE_TAG }} \
             --namespace=photovault --kubeconfig=kubeconfig.yaml
           
           kubectl apply -f k8s/configmap.yaml --kubeconfig=kubeconfig.yaml --namespace=photovault
@@ -99,8 +93,8 @@ jobs:
 
       - name: Wait for Rollout
         run: |
-          kubectl rollout status deployment/photovault-api --namespace=photovault --kubeconfig=kubeconfig.yaml --timeout=300s
-          kubectl rollout status deployment/pv-worker --namespace=photovault --kubeconfig=kubeconfig.yaml --timeout=300s
+          kubectl rollout status deployment/photovault-api \
+            --namespace=photovault --kubeconfig=kubeconfig.yaml --timeout=300s
 
       - name: Cleanup
         if: always()
