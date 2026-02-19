@@ -64,12 +64,13 @@ module.exports = (temporalClient, config) => {
                 // 4. Trigger Temporal
                 // Verify client exists before calling
                 if (temporalClient) {
-                    await temporalClient.workflow.start('processBatchImages', {
-                        taskQueue: config.temporal?.taskQueue || 'image-processing',
-                        workflowId: `batch-${batchId}`,
-                        args: [{ batchId, batchDir, images: imagePaths, folder }],
-                    });
+                        await temporalClient.workflow.start('processBatchImages', {
+                            taskQueue: config.temporal?.taskQueue || 'image-processing',
+                            workflowId: `batch-${batchId}`,
+                            args: [{ batchId, batchDir, images: imagePaths, folder }],
+                        });
                     console.log(`[Background] Workflow started for batch ${batchId}`);
+                    console.log(`[Background] Will save to album ${folder} after processing.`);
                 } else {
                     console.warn(`[Background] Temporal Client not initialized. Batch ${batchId} staged but not started.`);
                 }
